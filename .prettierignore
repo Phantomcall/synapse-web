@@ -3,3 +3,7 @@ node_modules
 out
 build
 package-lock.json
+# Prettier has no parser for dotenv syntax, and `format`/`format:check` run over
+# `.` -- without this they fail on the committed environment templates.
+.env*
+coverage

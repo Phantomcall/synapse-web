@@ -25,7 +25,14 @@ export function useSoroban() {
 
 interface SorobanProviderProps {
   children: ReactNode;
-  rpcUrl?: string;
+  /**
+   * Required, and expected to come from `appConfig.rpcUrl` in
+   * `app/layout.tsx`. It is deliberately not optional: an omitted URL used to
+   * fall back to a hardcoded testnet endpoint, which silently pointed a
+   * futurenet build at the wrong chain.
+   */
+  rpcUrl: string;
+  /** Undefined for a mock-data build, in which case the poller stays idle. */
   contractId?: string;
 }
 

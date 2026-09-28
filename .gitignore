@@ -32,6 +32,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The documented templates hold no values and are committed on purpose, so the
+# supported variables stay discoverable and each environment has a runnable
+# starting point. The exception has to sit after the `.env*` rule above to take
+# effect.
+!.env.example
+!.env.*.example
 
 # vercel
 .vercel

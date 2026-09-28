@@ -14,9 +14,13 @@ import { useLiveTransactions } from "@/lib/soroban/useLiveTransactions";
 import { shortId } from "@/lib/utils";
 import { AMBER, BG3, BORDER, MONO } from "@/lib/constants";
 import type { Transaction } from "@/lib/types";
+import { appConfig } from "@/lib/config";
 
-const RPC_URL = process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org";
-const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID;
+// Resolved once, through the validated config module, so the network/RPC
+// pairing has already been checked and the testnet endpoint is not hardcoded
+// in five places.
+const RPC_URL = appConfig.rpcUrl;
+const CONTRACT_ID = appConfig.contractId;
 
 export function TransactionsTab() {
   const [filter, setFilter] = useState("");

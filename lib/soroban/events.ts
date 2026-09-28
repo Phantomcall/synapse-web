@@ -1,6 +1,9 @@
 import { rpc } from "@stellar/stellar-sdk";
 
-const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
+// The endpoint is supplied by the validated config layer rather than defaulted
+// here. A hardcoded fallback in this file would silently override
+// NEXT_PUBLIC_NETWORK: a futurenet build with no explicit RPC URL would poll
+// testnet and render the wrong chain's data without any visible error.
 const POLL_INTERVAL_MS = 5000;
 const CURSOR_STORAGE_KEY = "soroban-event-cursor";
 
@@ -41,7 +44,14 @@ function storeCursor(cursor: string): void {
   } catch {}
 }
 
-export function createSorobanEventPoller(rpcUrl: string = DEFAULT_RPC_URL, contractId?: string) {
+export function createSorobanEventPoller(rpcUrl: string, contractId?: string) {
+  if (!rpcUrl) {
+    throw new Error(
+      "createSorobanEventPoller requires an RPC url. Use appConfig.rpcUrl from " +
+        "@/lib/config, which resolves the correct endpoint for the configured network."
+    );
+  }
+
   const server = new rpc.Server(rpcUrl);
   let cursor: string | null = getStoredCursor();
   let pollTimer: ReturnType<typeof setInterval> | null = null;

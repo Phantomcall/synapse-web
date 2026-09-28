@@ -4,6 +4,7 @@ import { AMBER, BG0 } from "@/lib/constants";
 import { ToastProvider } from "@/components/ui/Toast";
 import { SorobanProvider } from "@/lib/soroban/SorobanProvider";
 import { WalletProvider } from "@/lib/wallet/WalletProvider";
+import { appConfig } from "@/lib/config";
 import "./globals.css";
 
 /**
@@ -21,9 +22,7 @@ const ibmPlexMono = IBM_Plex_Mono({
   variable: "--font-ibm-plex-mono",
 });
 
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+const siteUrl = appConfig.siteUrl ?? "http://localhost:3000";
 
 const title = "Synapse Core · Testnet";
 const description = "Soroban transaction lifecycle dashboard";
@@ -73,10 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={ibmPlexMono.variable}>
       <body className="scanline-overlay">
         <ToastProvider>
-          <SorobanProvider
-            rpcUrl={process.env.NEXT_PUBLIC_SOROBAN_RPC_URL}
-            contractId={process.env.NEXT_PUBLIC_CONTRACT_ID}
-          >
+          <SorobanProvider rpcUrl={appConfig.rpcUrl} contractId={appConfig.contractId}>
             <WalletProvider>{children}</WalletProvider>
           </SorobanProvider>
         </ToastProvider>

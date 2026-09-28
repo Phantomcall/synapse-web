@@ -109,6 +109,62 @@ npm run format:check # Prettier (CI check)
 npx tsc --noEmit     # Type-check without emitting
 ```
 
+### Environment configuration
+
+Per-environment templates, each a complete starting point:
+
+| Template                                               | Network         | Contract     | Use for                                      |
+| ------------------------------------------------------ | --------------- | ------------ | -------------------------------------------- |
+| [`.env.development.example`](.env.development.example) | testnet / local | optional     | Local dev, mock-data fallback                |
+| [`.env.staging.example`](.env.staging.example)         | futurenet       | **required** | Pre-production, reachable by others          |
+| [`.env.production.example`](.env.production.example)   | testnet         | **required** | Production release                           |
+| [`.env.example`](.env.example)                         | —               | —            | Full variable reference and precedence rules |
+
+Copy the one that matches what you are doing:
+
+```bash
+cp .env.development.example .env.local
+```
+
+Staging targets futurenet on purpose: it exercises the non-default network path,
+so a testnet/production mix-up fails the staging build instead of reaching
+production.
+
+Configuration is **not** read ad hoc from `process.env`. Everything goes through
+`lib/config/env.ts`, which validates the values, and `appConfig` from
+`@/lib/config`, which exposes the resolved result:
+
+```ts
+import { appConfig } from "@/lib/config";
+
+appConfig.rpcUrl; // effective endpoint, resolved for the selected network
+appConfig.contractId; // undefined for a mock-data build
+appConfig.network; // id, passphrase, and explorer links
+appConfig.siteUrl; // published origin, if configured
+```
+
+`next build` validates the environment and fails on a problem, naming every issue
+at once rather than one per rebuild:
+
+```
+┌─ Invalid environment configuration ─────────────────────────────
+│ NEXT_PUBLIC_SOROBAN_RPC_URL: host "soroban-testnet.stellar.org" does
+│ not look like the Futurenet endpoint ("rpc-futurenet.stellar.org"). …
+└─────────────────────────────────────────────────────────────────
+```
+
+The pairing check is the point of the module: a mismatched network and RPC URL
+otherwise produces a dashboard that renders perfectly while showing another
+chain's data.
+
+Two rules are worth knowing:
+
+- **No secrets.** Every variable is `NEXT_PUBLIC_*` and is inlined into the
+  browser bundle. Nothing in `.env*` may hold a credential.
+- **Mock data stays available.** With no contract configured the app falls back to
+  `lib/mock-data.ts`. A contract is only required once a build advertises a
+  public origin, so a bare `next build` in CI still succeeds.
+
 ---
 
 ## Adding a new tab

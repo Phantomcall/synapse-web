@@ -11,9 +11,13 @@ import { invokeContract, simulateContractCall, stringArg } from "@/lib/soroban/c
 import { AMBER, BG1, BG2, BORDER, DIM, MONO, STATUS_META } from "@/lib/constants";
 import { formatAmount, shortId } from "@/lib/utils";
 import type { Transaction } from "@/lib/types";
+import { appConfig } from "@/lib/config";
 
-const RPC_URL = process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org";
-const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID;
+// Resolved once, through the validated config module, so the network/RPC
+// pairing has already been checked and the testnet endpoint is not hardcoded
+// in five places.
+const RPC_URL = appConfig.rpcUrl;
+const CONTRACT_ID = appConfig.contractId;
 
 interface TxDetailModalProps {
   tx: Transaction;
