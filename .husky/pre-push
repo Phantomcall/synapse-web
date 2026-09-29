@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+# Pre-push: full typecheck + the unit test suite.
+#
+# This is the last local gate before CI, so it runs the project-wide checks
+# that a staged-file-scoped pre-commit hook cannot: a type error in file A is
+# still a type error even when only file B was staged.
+#
+# Scope note: this runs UNIT tests only. The full browser E2E suite is
+# explicitly out of scope for local hooks (far too slow) and is CI-only. If a
+# Playwright suite is added, its specs live in e2e/ and `npm run test:unit`
+# must be kept from picking them up - see the "Git hooks" section of README.md.
+#
+# Pass branch names as arguments to pre-push to push only some refs; the checks
+# below do not care which refs are going up, so we deliberately ignore them.
+
+. "$(dirname "$0")/_lib.sh"
+
+synapse_bypass_guard "pre-push"
+
+if [ "$#" -gt 0 ]; then
+  echo "pre-push: typechecking and running unit tests before pushing $# ref(s)."
+else
+  echo "pre-push: typechecking and running unit tests."
+fi
+
+npm run --silent typecheck ||
+  synapse_die "pre-push" push "'tsc --noEmit' reported type errors. Run 'npm run typecheck' to see them."
+
+npm run --silent test:unit ||
+  synapse_die "pre-push" push "the unit test suite failed. Run 'npm run test:unit' to see the failures."
+
+echo "pre-push: typecheck and unit tests passed."

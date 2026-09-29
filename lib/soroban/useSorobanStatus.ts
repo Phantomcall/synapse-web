@@ -35,5 +35,11 @@ export function useSorobanStatus() {
     status,
     lastEventAge,
     health,
+    // Multi-RPC failover surface (issue #124): expose the active endpoint and
+    // the priority-ordered endpoint health so consumers can render failover
+    // state without reaching into the provider internals.
+    activeEndpoint: health.activeEndpoint ?? null,
+    endpoints: health.endpoints ?? [],
+    isFailingOver: Boolean(health.isFailingOver),
   };
 }

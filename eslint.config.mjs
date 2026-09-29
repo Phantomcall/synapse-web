@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated test/coverage output. Linting a report is just noise, and
+    // `npm run lint` runs in CI on a clean checkout, so it only shows up after
+    // a local coverage run.
+    "coverage/**",
   ]),
 ]);
 

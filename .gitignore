@@ -12,10 +12,20 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+
+# lighthouse ci
+/.lighthouseci
 
 # next.js
 /.next/
 /out/
+
+# docs
+/docs-dist/
 
 # production
 /build
@@ -32,6 +42,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The documented templates hold no values and are committed on purpose, so the
+# supported variables stay discoverable and each environment has a runnable
+# starting point. The exception has to sit after the `.env*` rule above to take
+# effect.
+!.env.example
+!.env.*.example
 
 # vercel
 .vercel
@@ -39,3 +55,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# CI tooling output
+/.lighthouseci/
+/sbom/
+
+# flake reporter output (local run artifact)
+/.flake-report.json

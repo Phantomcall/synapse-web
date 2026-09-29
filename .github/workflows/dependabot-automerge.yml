@@ -1,0 +1,122 @@
+# Dependabot update triage and auto-merge policy.
+#
+# Runs on every open/synchronize/reopen of a Dependabot PR and decides, without
+# a human in the loop, whether the update is safe to take unattended.
+#
+#   Auto-merge  <=>  every dependency change is a patch,
+#                    AND none is on the security-sensitive exception list,
+#                    AND every check run on the head commit is `completed` with
+#                    conclusion `success`,
+#                    AND the expected CI job actually reported green,
+#                    AND no branch-protection required context is missing.
+#
+# Anything else is held and labelled `needs-human-review` with the reasons
+# spelled out in a sticky PR comment. The policy is deliberately fail-closed: an
+# unreadable manifest, an unparseable version, a skipped check, a cancelled
+# check, or a branch-protection API we could not read all mean "a human looks at
+# this", never "merge anyway".
+#
+# The decision logic is pure and unit-tested:
+#   scripts/dependabot-automerge/policy.mjs      (the rules)
+#   scripts/dependabot-automerge/policy.test.mjs  (57 assertions over them)
+#   scripts/dependabot-automerge/triage.mjs       (fetches facts, applies them)
+#
+# ---------------------------------------------------------------------------
+# Why `pull_request_target` and not `pull_request`
+#
+# Dependabot-triggered `pull_request` runs get a read-only token and no access
+# to secrets, which is exactly what we need to be able to write to the PR. So
+# this runs on `pull_request_target`, which carries the base repository's
+# permissions. That is a well-known privilege-escalation shape, so this
+# workflow is written to be safe under it:
+#
+#   * `actions/checkout` is pinned to the *base* SHA, so the policy code that
+#     runs is `main`'s, never the PR's. A contributor cannot smuggle a permissive
+#     policy in through the branch they are trying to have merged.
+#   * `triage.mjs` never executes anything from the PR. It fetches files as text
+#     and parses them as JSON or scans them for `uses:` lines. It never runs
+#     `npm install`, never evaluates the manifest, never runs a build.
+#   * The `if:` guard restricts the whole job to Dependabot-authored PRs.
+#
+# ---------------------------------------------------------------------------
+# TWO REPOSITORY SETTINGS THIS WORKFLOW NEEDS
+#
+# Neither can be set from a file in the repo, and both fail *closed* - i.e. auto-
+# merge silently does nothing, or the workflow goes red - if they are missing.
+# Both were found by running the workflow's GraphQL call against the real API;
+# the error strings are mapped to these hints in triage.mjs.
+#
+#   1. Settings -> General -> Pull Requests -> "Allow auto-merge".
+#      Without it GitHub answers:
+#        "Auto merge is not allowed for this repository"
+#      and this workflow fails on every patch update.
+#
+#   2. A required status check on `main`. Without one, a Dependabot PR is already
+#      "in clean status" the moment it is opened, so auto-merge has nothing to
+#      wait for and arms as a no-op:
+#        "Pull request is in clean status"
+#      The obvious choice is this repo's own CI job,
+#      "Lint, typecheck, test, and build", which is also what EXPECTED_CI_CHECK
+#      below is set to. Wiring that check up is the natural companion to the
+#      vulnerability-scanning gate this issue depends on.
+# ---------------------------------------------------------------------------
+
+name: Dependabot auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# One triage per PR. A `synchronize` from Dependabot arriving while a previous
+# run is still going would otherwise race two merges onto the same PR.
+concurrency:
+  group: dependabot-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: Triage dependency update
+    # Fail closed at the trigger too: only Dependabot's own PRs are in scope.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' ||
+      github.event.pull_request.user.login == 'dependabot-preview[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the base branch
+        uses: actions/checkout@v4
+        with:
+          # The PR's own code is deliberately not checked out. See the note at
+          # the top of this file.
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Triage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_CI_CHECK: "Lint, typecheck, test, and build"
+        run: node scripts/dependabot-automerge/triage.mjs
+
+      # The policy's own unit tests are not re-run here: they are part of
+      # `npm run test`, so .github/workflows/ci.yml already gates them on the
+      # same PR. What this workflow must do is *use* the policy, not re-prove it.
+      - name: Fail if the policy could not be applied
+        # triage.mjs exits non-zero only for infrastructure failures (API errors,
+        # unreadable event payload). A legitimate hold exits 0 - a hold is a
+        # successful policy decision, not a broken workflow. This step therefore
+        # never runs, and exists to make that distinction explicit at the call
+        # site: if triage.mjs ever hard-fails, the workflow goes red and a human
+        # looks, rather than the PR sitting in limbo with no decision recorded.
+        if: failure()
+        run: |
+          echo "::error::Dependabot triage could not complete. Nothing was merged." \
+            "Check the step log above; this PR needs a human decision."

@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   mergeTransactionEvents,
   nativeToTransaction,
+  applyOptimisticOverlay,
+  pruneOptimisticTransitions,
+  OPTIMISTIC_TIMEOUT_MS,
   PLACEHOLDER_MARKER,
+  type OptimisticTransition,
 } from "./transactionMerge";
 import { MOCK_TXS } from "@/lib/mock-data";
 import type { NormalizedSorobanEvent } from "./events";
@@ -134,5 +138,117 @@ describe("nativeToTransaction", () => {
     const result = nativeToTransaction("tx-1", native, fallback);
     expect(result.asset).toBe(fallback.asset);
     expect(result.amount).toBe(fallback.amount);
+  });
+});
+
+describe("applyOptimisticOverlay", () => {
+  const base: Transaction = {
+    id: "tx-opt",
+    asset: "USDC",
+    amount: 10,
+    status: "PENDING",
+    timestamp: 1000,
+    from: "GFROM",
+    to: "GTO",
+    memo: "",
+    callback_url: "",
+    retries: 0,
+    created_at: 1000,
+  };
+
+  function transition(overrides: Partial<OptimisticTransition> = {}): OptimisticTransition {
+    return {
+      txId: "tx-opt",
+      expectedStatus: "PROCESSING",
+      previousStatus: "PENDING",
+      submittedAt: 1000,
+      ...overrides,
+    };
+  }
+
+  it("returns the input unchanged when there are no transitions", () => {
+    expect(applyOptimisticOverlay([base], [])).toEqual([base]);
+  });
+
+  it("applies the expected status immediately on submission", () => {
+    const result = applyOptimisticOverlay([base], [transition()], 1000);
+    expect(result[0]!.status).toBe("PROCESSING");
+  });
+
+  it("reconciles with the poller-confirmed status once it matches", () => {
+    const confirmed: Transaction = { ...base, status: "PROCESSING" };
+    const result = applyOptimisticOverlay([confirmed], [transition()], 1000);
+    expect(result[0]!.status).toBe("PROCESSING");
+  });
+
+  it("rolls back to the previous status when the submission fails", () => {
+    const result = applyOptimisticOverlay(
+      [base],
+      [transition({ failed: true, error: "reverted" })],
+      1000
+    );
+    expect(result[0]!.status).toBe("PENDING");
+  });
+
+  it("rolls back after the timeout when the poller never confirms", () => {
+    const result = applyOptimisticOverlay(
+      [base],
+      [transition()],
+      1000 + OPTIMISTIC_TIMEOUT_MS + 1
+    );
+    expect(result[0]!.status).toBe("PENDING");
+  });
+
+  it("leaves unrelated transactions untouched", () => {
+    const other: Transaction = { ...base, id: "tx-other" };
+    const result = applyOptimisticOverlay([base, other], [transition()], 1000);
+    expect(result[1]).toEqual(other);
+  });
+});
+
+describe("pruneOptimisticTransitions", () => {
+  const base: Transaction = {
+    id: "tx-opt",
+    asset: "USDC",
+    amount: 10,
+    status: "PENDING",
+    timestamp: 1000,
+    from: "GFROM",
+    to: "GTO",
+    memo: "",
+    callback_url: "",
+    retries: 0,
+    created_at: 1000,
+  };
+
+  function transition(overrides: Partial<OptimisticTransition> = {}): OptimisticTransition {
+    return {
+      txId: "tx-opt",
+      expectedStatus: "PROCESSING",
+      previousStatus: "PENDING",
+      submittedAt: 1000,
+      ...overrides,
+    };
+  }
+
+  it("keeps a transition that is still pending confirmation", () => {
+    expect(pruneOptimisticTransitions([base], [transition()], 1000)).toHaveLength(1);
+  });
+
+  it("drops a transition once the poller confirms the expected status", () => {
+    const confirmed: Transaction = { ...base, status: "PROCESSING" };
+    expect(pruneOptimisticTransitions([confirmed], [transition()], 1000)).toHaveLength(0);
+  });
+
+  it("drops a failed transition", () => {
+    expect(
+      pruneOptimisticTransitions([base], [transition({ failed: true })], 1000)
+    ).toHaveLength(0);
+  });
+
+  it("drops a transition that has timed out", () => {
+    expect(
+      pruneOptimisticTransitions([base], [transition()], 1000 + OPTIMISTIC_TIMEOUT_MS + 1)
+    ).toHaveLength(0);
   });
 });

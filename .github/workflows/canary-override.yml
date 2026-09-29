@@ -1,0 +1,59 @@
+# Manual override for production rollouts (#156).
+#
+#   rollback  send 100% of traffic back to the previous production deployment
+#             right now. Works mid-rollout, or after a release has completed
+#             when `to_deployment` is given.
+#   promote   skip the remaining stages and send 100% to the canary.
+#
+# Deliberately NOT in the `production-rollout` concurrency group, so it never
+# queues behind the rollout it is overriding. The running controller sees the
+# release leave the ACTIVE state on its next poll and stops.
+
+name: Canary override
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options: [rollback, promote]
+        default: rollback
+      reason:
+        description: Why (recorded on the Vercel rollback)
+        type: string
+        required: true
+      to_deployment:
+        description: "Rollback target deployment id (dpl_…). Only needed when no rollout is in progress."
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  override:
+    name: ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply override
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          ACTION: ${{ inputs.action }}
+          REASON: ${{ inputs.reason }} (by @${{ github.actor }})
+          TO: ${{ inputs.to_deployment }}
+        run: |
+          args=("$ACTION" --reason "$REASON")
+          if [ -n "$TO" ]; then args+=(--to "$TO"); fi
+          node scripts/deploy/canary-controller.mjs "${args[@]}"

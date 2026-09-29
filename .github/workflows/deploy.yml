@@ -1,0 +1,59 @@
+name: Staged deployment
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality gates
+    uses: ./.github/workflows/quality.yml
+
+  deploy:
+    name: Deploy ${{ github.event_name == 'push' && 'staging' || 'production' }}
+    needs: quality
+    if: github.event_name == 'push' || github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: ${{ github.event_name == 'push' && 'staging' || 'production' }}
+    steps:
+      - name: Checkout deployment revision
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          NEXT_PUBLIC_CONTRACT_ID: ${{ vars.NEXT_PUBLIC_CONTRACT_ID }}
+          NEXT_PUBLIC_SOROBAN_RPC_URL: ${{ vars.NEXT_PUBLIC_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org' }}
+        run: |
+          if [[ -z "$VERCEL_TOKEN" || -z "$VERCEL_ORG_ID" || -z "$VERCEL_PROJECT_ID" ]]; then
+            echo "Configure Vercel credentials in this GitHub environment."
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            vercel_environment=preview
+            deploy_target=""
+          else
+            vercel_environment=production
+            deploy_target=--prod
+          fi
+          npm exec --yes --package=vercel@latest -- vercel pull --yes --environment="$vercel_environment" --token="$VERCEL_TOKEN"
+          npm exec --yes --package=vercel@latest -- vercel build $deploy_target --token="$VERCEL_TOKEN"
+          npm exec --yes --package=vercel@latest -- vercel deploy --prebuilt --yes $deploy_target --token="$VERCEL_TOKEN"

@@ -1,96 +1,71 @@
-"use client";
+'use client';
 
-import { Component, type ErrorInfo, type ReactNode } from "react";
-import { AMBER, BG1, BG2, BORDER, DIM, MONO } from "@/lib/constants";
+import React from 'react';
+import { reportError } from '@/lib/telemetry';
 
-type Props = {
-  children: ReactNode;
-  title?: string;
-};
+interface TabErrorBoundaryProps {
+  /** Name of the tab, used as telemetry context. */
+  tabName?: string;
+  /** Whether a wallet is currently connected. */
+  walletConnected?: boolean;
+  /** Public wallet address (logged as-is; not a secret). */
+  walletAddress?: string;
+  /** Contract ID involved in the failing operation. */
+  contractId?: string;
+  children: React.ReactNode;
+}
 
-type State = {
+interface TabErrorBoundaryState {
   hasError: boolean;
-};
+}
 
-export class TabErrorBoundary extends Component<Props, State> {
-  state: State = {
-    hasError: false,
-  };
+/**
+ * Contains crashes inside a tab and reports them to telemetry with enough
+ * context (tab name, wallet-connected state, contract ID) to debug production
+ * issues. Sensitive data is scrubbed by the telemetry client before reporting.
+ */
+export class TabErrorBoundary extends React.Component<
+  TabErrorBoundaryProps,
+  TabErrorBoundaryState
+> {
+  state: TabErrorBoundaryState = { hasError: false };
 
-  static getDerivedStateFromError(): State {
+  static getDerivedStateFromError(): TabErrorBoundaryState {
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("TabErrorBoundary caught an error", error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    reportError(error, {
+      tabName: this.props.tabName,
+      walletConnected: this.props.walletConnected,
+      walletAddress: this.props.walletAddress,
+      contractId: this.props.contractId,
+      componentStack: errorInfo.componentStack,
+    });
   }
 
-  reset = () => {
-    this.setState({ hasError: false });
-  };
-
-  render() {
+  render(): React.ReactNode {
     if (this.state.hasError) {
       return (
-        <section
-          style={{
-            minHeight: 280,
-            display: "grid",
-            placeItems: "center",
-            padding: 24,
-            border: `1px solid ${BORDER}`,
-            background: `linear-gradient(180deg, ${BG2}, ${BG1})`,
-            borderRadius: 12,
-          }}
-        >
-          <div style={{ maxWidth: 520, width: "100%" }}>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "5px 10px",
-                border: `1px solid ${BORDER}`,
-                background: "rgba(245,166,35,0.08)",
-                color: AMBER,
-                fontSize: 11,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-              }}
-            >
-              Recovery screen
-            </div>
-
-            <h2 style={{ margin: "16px 0 10px", fontSize: 24, color: "#fff" }}>
-              {this.props.title ?? "This tab is unavailable"}
-            </h2>
-
-            <p style={{ margin: 0, color: DIM, lineHeight: 1.6 }}>
-              An unexpected error stopped this panel from rendering. You can retry the tab without
-              losing the rest of the shell.
-            </p>
-
-            <button
-              onClick={this.reset}
-              style={{
-                marginTop: 18,
-                padding: "10px 16px",
-                background: AMBER,
-                color: "#0A0B0D",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: 700,
-                fontFamily: MONO,
-                letterSpacing: "0.08em",
-              }}
-            >
-              Try again
-            </button>
-          </div>
-        </section>
+        <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+          <h2 className="text-lg font-semibold">Something went wrong</h2>
+          <p className="text-sm text-muted-foreground">
+            This tab encountered an unexpected error. The issue has been
+            reported.
+          </p>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-1.5 text-sm"
+            onClick={() => this.setState({ hasError: false })}
+          >
+            Try again
+          </button>
+        </div>
       );
     }
 
     return this.props.children;
   }
 }
+
+export default TabErrorBoundary;

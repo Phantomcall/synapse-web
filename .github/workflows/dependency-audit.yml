@@ -1,0 +1,59 @@
+# Dependency vulnerability gate (#153).
+#
+# Fails when a dependency carries an advisory at or above the threshold for its
+# scope and the advisory is not covered by an unexpired entry in
+# .github/audit-allowlist.json:
+#
+#   production dependencies  >= high
+#   dev-only dependencies    >= critical
+#
+# The daily schedule catches advisories published against code already on
+# main, which would otherwise only surface on the next unrelated PR.
+# Thresholds and the exception process: docs/ci/dependency-audit.md.
+
+name: Dependency audit
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # `npm audit` reads package-lock.json and queries the registry; it does
+      # not need node_modules, so there is no install step.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --json > "$RUNNER_TEMP/audit-prod.json" || true
+
+      - name: Audit full dependency tree
+        run: npm audit --json > "$RUNNER_TEMP/audit-full.json" || true
+
+      - name: Enforce severity thresholds
+        run: >
+          node scripts/ci/audit-gate.mjs
+          --prod "$RUNNER_TEMP/audit-prod.json"
+          --full "$RUNNER_TEMP/audit-full.json"
+          --allowlist .github/audit-allowlist.json
+          --summary "$GITHUB_STEP_SUMMARY"
