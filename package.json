@@ -11,6 +11,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -24,6 +26,10 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
+    "@semantic-release/github": "^12.0.10",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -31,12 +37,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4.7.0",
+    "conventional-changelog-conventionalcommits": "^10.4.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "husky": "^9.1.7",
     "jsdom": "^25.0.1",
     "lint-staged": "^17.1.0",
     "prettier": "^3.9.5",
+    "semantic-release": "^25.0.9",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.7"

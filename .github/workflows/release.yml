@@ -1,0 +1,66 @@
+name: Release
+
+# Cuts a release from the conventional commits merged into main, and bumps
+# package.json + CHANGELOG.md on main in the same run.
+#
+# Set the repository variable SEMANTIC_RELEASE_DRY_RUN=true to make this
+# workflow report the version and notes it *would* publish, without creating a
+# tag, a commit, or a GitHub release. Useful for checking the version maths on a
+# real merge before letting it publish.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One release at a time. A second push to main while a release is running would
+  # otherwise race to tag and publish.
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the release commit and push it to main
+  issues: write # post the success/failure comment
+  pull-requests: write # semantic-release posts its comment via the issues API
+
+jobs:
+  release:
+    name: Semantic release
+    runs-on: ubuntu-latest
+    # The release commit is pushed straight to main, so wait for CI on the
+    # merge commit first. Releasing a red build is worse than not releasing.
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the full history and all tags are required
+          persist-credentials: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure git identity for the release commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --dry-run reports the version and notes without writing a tag, a
+          # release commit, or a GitHub release.
+          DRY_RUN: ${{ vars.SEMANTIC_RELEASE_DRY_RUN }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "SEMANTIC_RELEASE_DRY_RUN=true — running without publishing."
+            npx semantic-release --dry-run
+          else
+            npx semantic-release
+          fi

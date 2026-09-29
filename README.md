@@ -109,6 +109,18 @@ npm run format:check # Prettier (CI check)
 npx tsc --noEmit     # Type-check without emitting
 ```
 
+npm run release # Cut a release from conventional commits
+npm run release:dry # Report the version/notes without publishing
+
+```
+
+### Releases
+
+Versions, the changelog, and GitHub releases are generated from conventional
+commits by semantic-release on merge to `main`. See
+[docs/release-process.md](docs/release-process.md) for the commit format, the
+pre-1.0 versioning rules, and the one-time tag step the repository still needs.
+
 ---
 
 ## Adding a new tab
@@ -154,3 +166,4 @@ Notable milestones on the path to a working testnet client:
 | Testing        | Vitest + Testing Library                         |
 | CI             | GitHub Actions (lint → typecheck → test → build) |
 | Target network | Stellar Testnet (Soroban)                        |
+```
