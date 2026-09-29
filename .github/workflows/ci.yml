@@ -1,15 +1,221 @@
+# CI for the single `build` job below runs four gates -- lint, typecheck, unit
+# tests, and a production build -- as one job. The job `name:` is the required
+# status check for branch protection, so it must not change casually.
+#
+# ---------------------------------------------------------------------------
+# CACHING
+#
+# Three caches, restored immediately before the step that consumes them. Each is
+# `actions/cache/restore` + `actions/cache/save` rather than a single `actions/cache`
+# step, because a save is only worth its upload on a miss, and `restore-keys` need
+# to be explicit. `setup-node`'s built-in `cache: npm` is removed in favour of the
+# explicit npm step below, so all three caches have the same shape.
+#
+# Rules that shaped the keys:
+#
+#   * Content, not commit, is what invalidates. A cache built from a different
+#     package-lock.json is never reused for a build, so the lockfile is hashed
+#     into the `.next/cache` and Vitest keys.
+#   * A trailing `-${{ github.sha }}` is on the two *derived* caches. A build cache
+#     is only correct for the tree that produced it, so the exact key stays
+#     per-commit, and `restore-keys` supplies the nearest safe ancestor. That
+#     gives an exact hit on a re-run of the same commit and a prefix hit on the
+#     next commit, but a miss after any lockfile or `next.config.ts` change.
+#   * The npm *download* cache deliberately uses a coarse `Linux-npm-` fallback. npm
+#     verifies every tarball against the integrity hash in the lockfile, so a
+#     tarball downloaded under a previous lockfile is still correct, and that is
+#     the entire point of the npm cache.
+#
+# Two things this workflow deliberately does not do:
+#
+#   * It does not widen `GITHUB_TOKEN` permissions. `actions/cache/save` needs no
+#     extra scope, and a fork PR's cache is scoped to that PR's merge ref by
+#     GitHub, so an outside contributor cannot seed the base branch cache. The
+#     code being cached here is not the concern; poisoning is, and keeping the
+#     default token read-only is the mitigation.
+#   * It does not cache `.next` itself, only `.next/cache`. `.next` is the
+#     deployable output; `.next/cache` is the compiler's private memo of how it
+#     got there. The build always regenerates `.next` from the checked-out source
+#     on the runner, and this workflow has no upload-artifact step, so no cached
+#     bytes are ever published from a PR build.
+#
+# Next.js asks for exactly this. When `.next/cache` is absent, `next build` on CI
+# prints: "No build cache found. Please configure build caching for faster
+# rebuilds." (nextjs.org/docs/messages/no-cache)
+#
+# No attempt is made to quantify how much time any of this saves; run-to-run
+# variance on shared runners is larger than the effect being measured.
+# ---------------------------------------------------------------------------
+
 name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   push:
     branches: [main]
 
 jobs:
-  lint-typecheck-test-build:
-    name: Lint, typecheck, test, and build
+  # ---------------------------------------------------------------------------
+  # Compatibility matrix (#174)
+  #
+  # Deliberate counterpoint to the single pinned Node version used by the
+  # build/publish job below. Pinning keeps the artifact reproducible; it also
+  # hides breakage on the versions contributors actually run locally. Both are
+  # wanted, so the *test* job is matrixed and the *build* job stays pinned.
+  #
+  # node-version: [20, 22] — 20 is the pinned build target, 22 is the current
+  # LTS. Node 24 is intentionally not in the matrix yet: jsdom 25 and the
+  # stellar-sdk dependency chain are not verified against it, and adding an
+  # unverified major would mean triaging failures nobody can act on. See the
+  # "Known limitations" section of the PR body.
+  #
+  # Cost control:
+  #   - fail-fast: false. With fail-fast: true a failure on Node 20 cancels the
+  #     Node 22 leg, which is precisely the information the matrix exists to
+  #     produce. The three legs are cheap and independent, so let them all run.
+  #   - Only `npm run test` is matrixed. Lint, typecheck and build are version
+  #     independent for this repo and stay in the single pinned job.
+  #   - setup-node's npm cache is keyed per Node version automatically.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test · Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm run test
+
+  quality:
+    name: Quality gates
+    uses: ./.github/workflows/quality.yml
+
+  preview-deploy:
+    name: Deploy PR preview
+    needs: quality
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    environment:
+      name: preview
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm run test
+
+  # ---------------------------------------------------------------------------
+  # Lint / typecheck / production build.
+  #
+  # Stays on the single pinned Node version (see the version-pinning issue): the
+  # build output is what gets published, and a reproducible build is worth more
+  # here than a second opinion from another runtime.
+  # ---------------------------------------------------------------------------
+  lint-typecheck-build:
+    name: Lint, typecheck, and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The Node version is read from .nvmrc rather than hardcoded here, so the
+      # runner, local `nvm use`, and the Docker dev environment cannot drift apart.
+      # .nvmrc is verified against package.json "engines" by the step below.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      # Fail fast, before anything is installed, built, or cached. See #172: the
+      # repo history already contains a jsdom/Node incompatibility fix and a
+      # lockfile regenerated to match CI's npm, both caused by this drifting.
+      - name: Verify pinned Node and npm versions
+        run: node scripts/check-toolchain.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm ci` is defined never to write the lockfile. If it did — because the
+      # lockfile was generated by a different npm, or is internally inconsistent —
+      # the install would silently diverge from what is committed, which is the
+      # exact failure mode of the "regenerate package-lock.json to match CI" commit
+      # in this repo's history.
+      - name: Verify npm ci left the lockfile untouched
+        run: |
+          if ! git diff --exit-code -- package-lock.json; then
+            echo "::error::npm ci modified package-lock.json. The committed lockfile is not consistent with the pinned toolchain. Regenerate it locally with the pinned Node/npm and commit the result."
+            exit 1
+          fi
+          echo "package-lock.json unchanged by npm ci"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Cross-engine E2E (#174)
+  #
+  # One job per engine, each running a single Playwright project from
+  # playwright.config.ts. Splitting by job (rather than running all three
+  # projects in one job) means a WebKit-only failure shows up as a failed WebKit
+  # check instead of an unattributable red X, and each leg gets its own retry
+  # budget.
+  #
+  # Cost: three legs in parallel, so wall-clock impact on the PR is bounded by
+  # the slowest leg (~4 min: npm ci, browser install, production build, 6 specs),
+  # not their sum. This is the single largest addition to CI time in this PR and
+  # is the price of the required browser matrix. `retries: 1` in
+  # playwright.config.ts absorbs genuine flake without hiding a real regression.
+  #
+  # `npx playwright install --with-deps <browser>` installs one engine instead of
+  # all three; the system packages still cost ~30s per leg, which is why the
+  # npm cache and the browser download cache below matter.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E · ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, firefox, webkit]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,19 +224,149 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      # --- npm package cache ---------------------------------------------------
+      - name: Locate the npm cache directory
+        id: npm-cache-dir
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the npm package cache
+        id: npm-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Save the npm package cache
+        if: steps.npm-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+
+      # --- Vitest / Vite cache -------------------------------------------------
+      # Restored AFTER `npm ci` on purpose: `npm ci` deletes node_modules wholesale
+      # before reinstalling, so a restore placed before it would be wiped a few
+      # seconds later while still reporting a cache hit in the logs.
+      - name: Restore the Vitest cache
+        id: vitest-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules/.vite
+          key: ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json') }}-
+
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(npx playwright --version)" >> "$GITHUB_OUTPUT"
+
       - name: Lint
         run: npm run lint
 
-      - name: Typecheck
-        run: npx tsc --noEmit
+      - name: Cache browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install ${{ matrix.project }}
+        run: npx playwright install --with-deps ${{ matrix.project }}
+
+      - name: Save the Vitest cache
+        if: steps.vitest-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules/.vite
+          key: ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+
+      # --- Next.js build cache -------------------------------------------------
+      - name: Restore the Next.js build cache
+        id: next-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('next.config.ts', 'package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('next.config.ts', 'package-lock.json') }}-
 
       - name: Test
+        # Retries are on (vitest.config.ts). A test that is still red after the
+        # last attempt fails here exactly as it always did; a test that only
+        # passes on a retry does not, and is reported in its own section and as
+        # a ::warning annotation on the PR. See docs/testing/QUARANTINE.md.
         run: npm run test
+
+      - name: Check the flake history
+        # A retry keeps a flaky test from breaking unrelated work; it does not
+        # fix anything. This step is where a test that keeps needing retries is
+        # held to an active quarantine with a named owner and an expiry, so it
+        # cannot be retried into a green build forever.
+        run: |
+          node scripts/test/flake-history.mjs \
+            --no-merge \
+            --commit="${GITHUB_SHA}" \
+            --summary-out=flake-summary
+
+      - name: Check the flake history
+        # A retry keeps a flaky test from breaking unrelated work; it does not
+        # fix anything. This step is where a test that keeps needing retries is
+        # held to an active quarantine with a named owner and an expiry, so it
+        # cannot be retried into a green build forever.
+        run: |
+          node scripts/test/flake-history.mjs \
+            --no-merge \
+            --commit="${GITHUB_SHA}" \
+            --summary-out=flake-summary.md \
+            --enforce
+          if [ -f flake-summary.md ]; then cat flake-summary.md >> "$GITHUB_STEP_SUMMARY"; fi
 
       - name: Build
         run: npm run build
+
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium]
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Save the Next.js build cache
+        if: steps.next-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('next.config.ts', 'package-lock.json') }}-${{ github.sha }}
+
+      - name: Run ${{ matrix.project }} project
+        run: npx playwright test --project=${{ matrix.project }}
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: playwright-report/
+          retention-days: 7

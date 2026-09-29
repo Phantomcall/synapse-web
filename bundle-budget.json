@@ -1,0 +1,8 @@
+{
+  "$comment": "Gzipped byte budgets enforced by scripts/ci/bundle-budget.mjs. Baseline at introduction: / initial JS 339.3 KB, CSS 2.7 KB, total JS 356.9 KB, largest chunk 69.2 KB. Raising a budget needs a PR that says why. See docs/ci/performance-gates.md.",
+  "routes": {
+    "/": { "js": 368640, "css": 8192 }
+  },
+  "totalJs": 389120,
+  "largestChunk": 81920
+}

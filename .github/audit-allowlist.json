@@ -1,0 +1,93 @@
+{
+  "$comment": "Time-boxed exceptions for the dependency audit gate. Every entry needs id, reason, tracking and expires; see docs/ci/dependency-audit.md.",
+  "exceptions": [
+    {
+      "id": "GHSA-gcfj-64vw-6mp9",
+      "package": "axios",
+      "severity": "high",
+      "reason": "Pre-existing. axios arrives transitively via @stellar/stellar-sdk and the wallet kit; the advisory is in the Node HTTP adapter with proxy settings, while the browser bundle uses the XHR/fetch adapter. Remove once the upstream SDKs ship a patched axios.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-6gpp-xcg3-4w24",
+      "package": "next",
+      "severity": "high",
+      "reason": "Pre-existing when the gate was introduced. Fixed in next >=16.3.3, a minor framework bump (together with eslint-config-next) that needs its own PR and regression pass. The affected surfaces (Image Optimization API, Server Actions, rewrites, custom/Windows servers, middleware) are not used by this statically prerendered dashboard.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-m99w-x7hq-7vfj",
+      "package": "next",
+      "severity": "high",
+      "reason": "Pre-existing when the gate was introduced. Fixed in next >=16.3.3, a minor framework bump (together with eslint-config-next) that needs its own PR and regression pass. The affected surfaces (Image Optimization API, Server Actions, rewrites, custom/Windows servers, middleware) are not used by this statically prerendered dashboard.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-89xv-2m56-2m9x",
+      "package": "next",
+      "severity": "high",
+      "reason": "Pre-existing when the gate was introduced. Fixed in next >=16.3.3, a minor framework bump (together with eslint-config-next) that needs its own PR and regression pass. The affected surfaces (Image Optimization API, Server Actions, rewrites, custom/Windows servers, middleware) are not used by this statically prerendered dashboard.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-p9j2-gv94-2wf4",
+      "package": "next",
+      "severity": "high",
+      "reason": "Pre-existing when the gate was introduced. Fixed in next >=16.3.3, a minor framework bump (together with eslint-config-next) that needs its own PR and regression pass. The affected surfaces (Image Optimization API, Server Actions, rewrites, custom/Windows servers, middleware) are not used by this statically prerendered dashboard.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-p293-qw3h-jr36",
+      "package": "next",
+      "severity": "critical",
+      "reason": "Pre-existing when the gate was introduced. Fixed in next >=16.3.3, a minor framework bump (together with eslint-config-next) that needs its own PR and regression pass. The affected surfaces (Image Optimization API, Server Actions, rewrites, custom/Windows servers, middleware) are not used by this statically prerendered dashboard.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-2xp9-vwfh-vxw4",
+      "package": "next",
+      "severity": "critical",
+      "reason": "Pre-existing when the gate was introduced. Fixed in next >=16.3.3, a minor framework bump (together with eslint-config-next) that needs its own PR and regression pass. The affected surfaces (Image Optimization API, Server Actions, rewrites, custom/Windows servers, middleware) are not used by this statically prerendered dashboard.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-6g55-p6wh-862q",
+      "package": "postcss",
+      "severity": "high",
+      "reason": "Pre-existing. This postcss copy is nested inside next@16.2.6 and only processes our own CSS at build time. Resolved by the same next >=16.3.3 bump.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-r28c-9q8g-f849",
+      "package": "postcss",
+      "severity": "high",
+      "reason": "Pre-existing. This postcss copy is nested inside next@16.2.6 and only processes our own CSS at build time. Resolved by the same next >=16.3.3 bump.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-f88m-g3jw-g9cj",
+      "package": "sharp",
+      "severity": "high",
+      "reason": "Pre-existing. sharp is the optional image-optimisation dependency of next@16.2.6 and is never invoked because the app does not use next/image. Resolved by the same next bump.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    },
+    {
+      "id": "GHSA-rgj7-g3m4-5g8c",
+      "package": "sharp",
+      "severity": "high",
+      "reason": "Pre-existing. sharp is the optional image-optimisation dependency of next@16.2.6 and is never invoked because the app does not use next/image. Resolved by the same next bump.",
+      "tracking": "docs/ci/dependency-audit.md#baseline-exceptions",
+      "expires": "2026-10-31"
+    }
+  ]
+}

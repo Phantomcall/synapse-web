@@ -1,0 +1,309 @@
+# Automated rollback for failed / degraded production deploys — see issue #171.
+#
+# The full configuration contract (repository variables, secrets, and the
+# health-signal payload shape) is in docs/rollback.md. Nothing in this file is a
+# secret and nothing is hardcoded to a particular hosting platform: every threshold
+# and every integration endpoint is read from repository configuration.
+#
+# ── What "rollback" means here ───────────────────────────────────────────────────
+# Synapse Core is a stateless frontend, so a rollback is "serve the previous build":
+# one idempotent move of the production alias back to the last known-good immutable
+# artifact. There is no data or state to migrate or unwind, so there is no
+# down-migration step to get wrong.
+#
+# ── Entry points ────────────────────────────────────────────────────────────────
+#   repository_dispatch `deploy_completed`  the deploy pipeline records a promotion
+#   schedule (*/5)                          sweeps for degradation once the window opens
+#   workflow_dispatch                       operator override (auto / force / never)
+#
+# ── Anti-flap ────────────────────────────────────────────────────────────────────
+# The workflow-level `concurrency` group serialises whole runs, so two evaluations
+# can never race each other to the production alias. The three-stage circuit breaker
+# (observation window -> cooldown -> breaker) lives in
+# scripts/deploy/rollback-policy.mjs; its purpose is to stop "roll back, re-promote,
+# roll back" loops. See the header of that file for the failure mode it prevents.
+
+name: Rollback
+
+on:
+  repository_dispatch:
+    types: [deploy_completed]
+  schedule:
+    # Sweep every 5 minutes. This is what bounds the detection window: a build that
+    # goes bad is judged within 5 minutes of its observation window closing.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "auto = evaluate and roll back if unhealthy; force = roll back now, bypassing every guard; never = evaluate and report but do not roll back"
+        type: choice
+        required: true
+        default: auto
+        options: [auto, force, never]
+      reason:
+        description: "Recorded in the deploy state and the job summary. Give one for force/never."
+        type: string
+        default: ""
+      signals_json:
+        description: "Optional inline health-signal payload (see docs/rollback.md). Overrides the configured signals URL; useful for testing."
+        type: string
+        default: ""
+
+# One rollback at a time. `cancel-in-progress: false` on purpose: a queued
+# evaluation must wait for the in-flight one rather than cancelling a rollback
+# that is already in flight. The group is held for the whole run, so a job in the
+# same workflow must not request it again (that would deadlock on its own
+# prerequisite) — hence no job-level concurrency here.
+concurrency:
+  group: production-rollback
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push the deploy-state branch
+
+env:
+  STATE_BRANCH: ops/production-deploy-state
+  # Thresholds are configuration, not code. The fallbacks below are only used when
+  # the repository variable is unset, so a fresh fork still runs sensibly.
+  OBSERVATION_WINDOW_MINUTES: ${{ vars.SYNAPSE_OBSERVATION_WINDOW_MINUTES || '15' }}
+  COOLDOWN_MINUTES: ${{ vars.SYNAPSE_ROLLBACK_COOLDOWN_MINUTES || '30' }}
+  MAX_CONSECUTIVE_ROLLBACKS: ${{ vars.SYNAPSE_MAX_CONSECUTIVE_ROLLBACKS || '2' }}
+  MAX_ERROR_RATE: ${{ vars.SYNAPSE_MAX_ERROR_RATE || '0.01' }}
+  MAX_SYNTHETIC_FAILURE_RATIO: ${{ vars.SYNAPSE_MAX_SYNTHETIC_FAILURE_RATIO || '0.25' }}
+  MIN_REQUESTS: ${{ vars.SYNAPSE_MIN_REQUESTS || '50' }}
+  MIN_SYNTHETIC_SAMPLES: ${{ vars.SYNAPSE_MIN_SYNTHETIC_SAMPLES || '3' }}
+
+jobs:
+  evaluate:
+    name: Evaluate health signals
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      action: ${{ steps.policy.outputs.action }}
+      code: ${{ steps.policy.outputs.code }}
+      rollback_to: ${{ steps.policy.outputs.rollback_to }}
+      reason: ${{ steps.policy.outputs.reason }}
+      breaker_open: ${{ steps.policy.outputs.breaker_open }}
+      breaker_was_open: ${{ steps.policy.outputs.breaker_was_open }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # ── Persisted state ────────────────────────────────────────────────────────
+      # A dedicated branch holding a single state.json. GitHub Actions has no
+      # key/value store, and a branch is the only durable same-repo option that
+      # needs no third-party action and no external database. That branch must not
+      # be branch-protected, and this workflow's GITHUB_TOKEN needs contents:write.
+      - name: Check out deploy state branch
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/deploy-state"
+          mkdir -p "$RUNNER_TEMP/deploy-state"
+          cd "$RUNNER_TEMP/deploy-state"
+          git init -q -b "$STATE_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch --quiet --depth=1 origin "$STATE_BRANCH" 2>/dev/null; then
+            git checkout -q -B "$STATE_BRANCH" FETCH_HEAD
+          else
+            echo "{}" > state.json
+            echo "::notice::No '$STATE_BRANCH' branch yet. Starting from an empty deploy state; a promotion must be recorded before any rollback can fire."
+          fi
+
+      # ── Record the promotion this run is reporting ──────────────────────────────
+      - name: Record promotion
+        if: ${{ github.event_name == 'repository_dispatch' }}
+        env:
+          REF: ${{ github.event.client_payload.ref }}
+          SHA: ${{ github.event.client_payload.sha }}
+          PREVIOUS_REF: ${{ github.event.client_payload.previous_ref }}
+        run: |
+          set -euo pipefail
+          REF="${REF:-$SHA}"
+          if [ -z "$REF" ]; then
+            echo "::error::deploy_completed carried no client_payload.ref or client_payload.sha; nothing was recorded"
+            exit 1
+          fi
+          args=(--state-file "$RUNNER_TEMP/deploy-state/state.json" --ref "$REF" --at "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" --message "promoted by deploy pipeline")
+          if [ -n "${PREVIOUS_REF:-}" ]; then
+            args+=(--previous-ref "$PREVIOUS_REF")
+          fi
+          node scripts/deploy/record-promotion.mjs "${args[@]}"
+
+      # ── Health signals ─────────────────────────────────────────────────────────
+      - name: Collect health signals
+        env:
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'auto' }}
+          INLINE_SIGNALS: ${{ inputs.signals_json }}
+          SIGNALS_URL: ${{ vars.SYNAPSE_HEALTH_SIGNALS_URL }}
+          SIGNALS_TOKEN: ${{ secrets.SYNAPSE_HEALTH_SIGNALS_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rollback"
+          if [ "$MODE" = "never" ]; then
+            # A deliberate "do not roll back" needs no signal source at all, so an
+            # unconfigured integration can never block the manual override.
+            printf '{"skipped":true}' > "$RUNNER_TEMP/rollback/signals.json"
+            exit 0
+          fi
+          if [ -n "$INLINE_SIGNALS" ]; then
+            printf '%s' "$INLINE_SIGNALS" > "$RUNNER_TEMP/rollback/signals.json"
+            exit 0
+          fi
+          if [ -z "$SIGNALS_URL" ]; then
+            echo "::error::No health-signal source configured. Set the repository variable SYNAPSE_HEALTH_SIGNALS_URL, or run this workflow with mode=never, or pass signals_json. An unconfigured health gate is not a passing health gate."
+            exit 1
+          fi
+          code=$(curl -sS -o "$RUNNER_TEMP/rollback/signals.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $SIGNALS_TOKEN" \
+            -H 'Accept: application/json' \
+            --max-time 20 "$SIGNALS_URL")
+          if [ "$code" != "200" ]; then
+            echo "::error::Health-signal source returned HTTP $code. Treating that as unavailable, not as healthy."
+            printf '{"unavailable":true}' > "$RUNNER_TEMP/rollback/signals.json"
+          fi
+
+      - name: Decide
+        id: policy
+        env:
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'auto' }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --slurpfile state "$RUNNER_TEMP/deploy-state/state.json" \
+            --slurpfile signals "$RUNNER_TEMP/rollback/signals.json" \
+            --arg now "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+            --arg mode "$MODE" \
+            --arg reason "$REASON" \
+            '{
+              state: ($state[0] // {}),
+              signals: (if ($signals[0].skipped == true or $signals[0].unavailable == true)
+                        then null else $signals[0] end),
+              now: $now,
+              mode: $mode,
+              reason: $reason,
+              thresholds: {
+                observationWindowMinutes: (env.OBSERVATION_WINDOW_MINUTES | tonumber),
+                cooldownMinutes: (env.COOLDOWN_MINUTES | tonumber),
+                maxConsecutiveRollbacks: (env.MAX_CONSECUTIVE_ROLLBACKS | tonumber),
+                maxErrorRate: (env.MAX_ERROR_RATE | tonumber),
+                maxSyntheticFailureRatio: (env.MAX_SYNTHETIC_FAILURE_RATIO | tonumber),
+                minRequests: (env.MIN_REQUESTS | tonumber),
+                minSyntheticSamples: (env.MIN_SYNTHETIC_SAMPLES | tonumber)
+              }
+            }' > "$RUNNER_TEMP/rollback/request.json"
+          node scripts/deploy/rollback-policy.mjs \
+            --input "$RUNNER_TEMP/rollback/request.json" \
+            --state-out "$RUNNER_TEMP/deploy-state/state.json" \
+            | tee "$RUNNER_TEMP/rollback/output.txt"
+          grep -E '^(action|code|rollback_to|breaker_open|breaker_was_open|reason)=' \
+            "$RUNNER_TEMP/rollback/output.txt" >> "$GITHUB_OUTPUT"
+
+      - name: Commit deploy state
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/deploy-state"
+          git add state.json
+          if git diff --cached --quiet; then
+            echo "deploy state unchanged"
+            exit 0
+          fi
+          git commit -q -m "chore(deploy-state): rollback run ${{ github.run_id }} [${{ steps.policy.outputs.action }}/${{ steps.policy.outputs.code }}]"
+          for attempt in 1 2 3; do
+            if git push -q origin "HEAD:$STATE_BRANCH"; then
+              echo "pushed $STATE_BRANCH"
+              exit 0
+            fi
+            echo "push attempt $attempt failed; rebasing onto $STATE_BRANCH"
+            git pull -q --rebase origin "$STATE_BRANCH" || exit 1
+          done
+          echo "::error::could not push $STATE_BRANCH after 3 attempts"
+          exit 1
+
+      # Values that reach a shell go through env, never through a ${{ }} expansion
+      # inside the script body, so a ref name or reason can never be executed.
+      - name: Summarise
+        env:
+          ACTION: ${{ steps.policy.outputs.action }}
+          CODE: ${{ steps.policy.outputs.code }}
+          TARGET: ${{ steps.policy.outputs.rollback_to }}
+          REASON: ${{ steps.policy.outputs.reason }}
+          BREAKER_OPEN: ${{ steps.policy.outputs.breaker_open }}
+        run: |
+          {
+            echo "### Rollback evaluation"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| outcome | \`$ACTION\` (\`$CODE\`) |"
+            echo "| rollback target | \`${TARGET:-n/a}\` |"
+            echo "| reason | $REASON |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BREAKER_OPEN" = "1" ]; then
+            echo "::warning title=Automatic rollback suspended::The circuit breaker is latched. Automatic rollback will not fire again until someone re-runs this workflow with mode=force or mode=never."
+          fi
+
+  rollback:
+    name: Restore the previous build
+    needs: evaluate
+    if: ${{ needs.evaluate.outputs.action == 'rollback' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Roll back production
+        env:
+          ROLLBACK_HOOK: ${{ vars.SYNAPSE_ROLLBACK_HOOK_URL }}
+          ROLLBACK_TOKEN: ${{ secrets.SYNAPSE_ROLLBACK_HOOK_TOKEN }}
+          TARGET: ${{ needs.evaluate.outputs.rollback_to }}
+          REASON: ${{ needs.evaluate.outputs.reason }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TARGET" ]; then
+            echo "::error::A rollback was triggered but no previous good ref is recorded in the deploy state, so there is nothing to serve. Restore the last known-good build by hand."
+            exit 1
+          fi
+          if [ -z "$ROLLBACK_HOOK" ]; then
+            echo "::error::A rollback was triggered but the repository variable SYNAPSE_ROLLBACK_HOOK_URL is not set, so the production alias cannot be moved. Restore the previous build by hand."
+            exit 1
+          fi
+          echo "::error title=Production rollback::Health thresholds breached. Restoring the previous build at $TARGET. $REASON"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $ROLLBACK_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"toRef\":\"$TARGET\",\"reason\":\"$REASON\"}" \
+            --max-time 30 "$ROLLBACK_HOOK")
+          if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+            echo "rollback hook accepted (HTTP $code); production now serves $TARGET"
+            exit 0
+          fi
+          echo "::error::Rollback hook returned HTTP $code. The alias may still be on the bad build - roll back by hand."
+          exit 1
+
+  # Latching the breaker is the one outcome that must never pass silently: from
+  # then on, the automation that was supposed to protect production is not running,
+  # and the next real regression will not be caught. This job fails the run so it
+  # shows up in the branch's required-check list. It only fails on the *transition*
+  # into the latched state, so the 5-minute sweep does not go red forever once
+  # someone is already looking at it.
+  latched-breaker:
+    name: Report a newly latched circuit breaker
+    needs: evaluate
+    if: >-
+      ${{ needs.evaluate.outputs.breaker_open == '1'
+          && needs.evaluate.outputs.breaker_was_open == '0' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail loudly
+        env:
+          REASON: ${{ needs.evaluate.outputs.reason }}
+          COOLDOWN: ${{ env.COOLDOWN_MINUTES }}
+        run: |
+          echo "::error title=Automatic rollback suspended::The circuit breaker just latched. $REASON Automatic rollback will not fire again until a human re-runs this workflow with mode=force (roll back deliberately) or mode=never (accept the risk and hold for ${COOLDOWN}m)."
+          exit 1

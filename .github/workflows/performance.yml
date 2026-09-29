@@ -1,0 +1,143 @@
+# Bundle-size and Lighthouse CI regression gates (#155).
+#
+#   Bundle budget         gzipped JS/CSS budgets from bundle-budget.json
+#   Lighthouse CI         median-of-5 audit of a local `next start` build of the PR
+#   Lighthouse CI (preview)
+#                         the same audit against the PR's preview deployment, run
+#                         when the hosting platform reports a successful Preview
+#                         deployment (Vercel, Netlify and others emit GitHub
+#                         `deployment_status` events; see #152)
+#
+# Thresholds, baseline and how to raise a budget: docs/ci/performance-gates.md
+
+name: Performance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LHCI_VERSION: 0.15.1
+
+jobs:
+  bundle-budget:
+    name: Bundle budget
+    if: github.event_name != 'deployment_status'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Check bundle budget
+        run: node scripts/ci/bundle-budget.mjs --json bundle-size.json --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-size-${{ github.sha }}
+          path: bundle-size.json
+          if-no-files-found: ignore
+
+      # Hand the build to the Lighthouse job so the app is not built twice.
+      - name: Drop build cache before handing off the build
+        run: rm -rf .next/cache
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build-${{ github.sha }}
+          path: .next
+          include-hidden-files: true
+          retention-days: 1
+
+  lighthouse:
+    name: Lighthouse CI
+    if: github.event_name != 'deployment_status'
+    needs: bundle-budget
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build-${{ github.sha }}
+          path: .next
+
+      - name: Run Lighthouse CI
+        run: npx --yes "@lhci/cli@${LHCI_VERSION}" autorun
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports-${{ github.sha }}
+          path: .lighthouseci/reports
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  lighthouse-preview:
+    name: Lighthouse CI (preview)
+    if: >
+      github.event_name == 'deployment_status' &&
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment != 'Production' &&
+      github.event.deployment.environment != 'production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Lighthouse CI against the preview deployment
+        env:
+          LHCI_BASE_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          echo "Auditing $LHCI_BASE_URL" >> "$GITHUB_STEP_SUMMARY"
+          npx --yes "@lhci/cli@${LHCI_VERSION}" autorun
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-preview-reports-${{ github.event.deployment.sha }}
+          path: .lighthouseci/reports
+          include-hidden-files: true
+          if-no-files-found: ignore

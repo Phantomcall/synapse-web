@@ -45,7 +45,13 @@ export function Pipeline({ txs }: PipelineProps) {
                     }}
                   >
                     <div
-                      style={{ width: 1, height: 16, background: active ? m.color + "66" : BORDER }}
+                      style={{
+                        width: 1,
+                        height: 16,
+                        background: active
+                          ? `color-mix(in srgb, ${m.color} 40%, transparent)`
+                          : BORDER,
+                      }}
                     />
                     <svg width="12" height="8" viewBox="0 0 12 8">
                       <polyline
@@ -74,7 +80,7 @@ export function Pipeline({ txs }: PipelineProps) {
                           position: "absolute",
                           top: -1,
                           height: 3,
-                          background: `linear-gradient(90deg, ${prevStage ? STATUS_META[prevStage.key].color : "transparent"}99, transparent)`,
+                          background: `linear-gradient(90deg, ${prevStage ? `color-mix(in srgb, ${STATUS_META[prevStage.key].color} 60%, transparent)` : "transparent"}, transparent)`,
                           animation: "flowLine 1.8s linear infinite",
                         }}
                       />
@@ -105,19 +111,27 @@ export function Pipeline({ txs }: PipelineProps) {
                 >
                   <div
                     style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
+                      width: 18,
+                      height: 18,
+                      borderRadius: s.key === "FAILED" ? 2 : "50%",
                       background: active ? m.color : "transparent",
                       border: `2px solid ${active ? m.color : BORDER}`,
                       boxShadow: active ? `0 0 10px 3px ${m.glow}` : "none",
                       marginBottom: 8,
+                      display: "grid",
+                      placeItems: "center",
+                      color: active ? "#0A0B0D" : DIM,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: MONO,
                       animation:
                         s.key === "PROCESSING" && active
                           ? "pulse 1.2s ease-in-out infinite"
                           : "none",
                     }}
-                  />
+                  >
+                    {m.symbol}
+                  </div>
                   <span
                     style={{
                       fontSize: 9,

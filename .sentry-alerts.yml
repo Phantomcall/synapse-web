@@ -1,0 +1,232 @@
+# Telemetry alert rules — Synapse Core
+#
+# WHAT THIS FILE IS
+#   A human-reviewable, version-controlled manifest of the alert rules that must
+#   exist in Sentry for the production Synapse Core deployment, plus the
+#   notification payload shape those rules must deliver.
+#
+# WHAT THIS FILE IS NOT
+#   It is NOT an importable Sentry config. Sentry does not expose a supported
+#   "import alert rules from YAML" path, so the rules below must be created by
+#   hand in the Sentry UI. The file exists so that the thresholds are reviewable
+#   in a pull request, reproducible from a cold start, and cannot silently drift
+#   away from the unit-tested evaluation logic in `lib/telemetry/alertRules.ts`.
+#
+#   `lib/telemetry/alertRules.test.ts` asserts that ALERT_RULE_NAMES matches the
+#   `rules[].name` values here, so a threshold edited in one place and not the
+#   other fails CI.
+#
+# HOW TO APPLY (see lib/telemetry/README.md for the step-by-step)
+#   Sentry → your org → Alerts → Create Alert Rule → Metric Alert, once per
+#   entry in `rules[]`. Field mapping is given per rule below.
+
+version: 1
+owner: synapse-web-maintainers
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notification channels
+# ─────────────────────────────────────────────────────────────────────────────
+# Every rule below posts to the same set of actions. Each entry maps to a
+# Sentry "Alert Rule → Action" target; a missing integration degrades that
+# action only, it does not disable the rule.
+#
+# `webhook` is the primary channel because its payload is the `AlertPayload`
+# type in lib/telemetry/alertRules.ts — the receiver is a thin Slack/Discord
+# adapter with no per-rule special-casing.
+actions:
+  - type: webhook
+    id: ops-slack-webhook
+    description: "Posts AlertPayload JSON to the #synapse-alerts Slack relay."
+    payload_contract: lib/telemetry/alertRules.ts#AlertPayload
+    required_fields:
+      - "title # severity prefix, e.g. [CRITICAL]"
+      - "route # affected route, (unattributed) when the provider could not scope it"
+      - "signal # stream + tripped check, e.g. web-vitals LCP / p75-regression"
+      - "magnitude # how bad, e.g. LCP p75 3000ms regressed ... (1.5x)"
+      - "detail.windowMinutes # rolling window the decision was made over"
+      - "detail.multiple # observed/limit ratio, for triage ordering"
+      - "dashboardUrl # deep link scoped to the affected route"
+      - "release # build identifier, so on-call can bisect"
+
+  - type: email
+    id: maintainer-list
+    description: Fallback for when Slack is down. Same content, plain-text body.
+
+  - type: slack
+    id: ops-slack-channel
+    description: >-
+      Direct #synapse-alerts post. Sentry renders its own layout; the webhook
+      above is preferred because its fields are machine-readable.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared anti-alert-fatigue controls
+# ─────────────────────────────────────────────────────────────────────────────
+# These are the two controls that keep the rules from paging on noise. They map
+# to the "Insufficient data" behaviour in Sentry's metric alert builder.
+defaults:
+  environment: production
+  # "Insufficient Data" resolution: when the window has too little traffic, the
+  # alert resolves as "inconclusive" rather than firing. This is Sentry's own
+  # mechanism and it is what the volume floors below rely on.
+  insufficient_data_resolution: inconclusive
+  # Two consecutive breaches before firing, so a single bad scrape does not page.
+  consecutive_breaches: 2
+  # 24h of no data also resolves the alert, so a dead pipeline cannot leave a
+  # rule permanently "firing" in a channel.
+  no_data_period: 24h
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rules
+# ─────────────────────────────────────────────────────────────────────────────
+# Field mapping to the Sentry metric-alert builder:
+#   name            → Alert rule name
+#   windowMinutes   → Time Window
+#   minEvents       → min. events threshold (the "Insufficient Data" floor)
+#   maxErrorRatio   → the condition, as a percentage of total events
+#   maxErrorCount   → a second condition on raw error count
+#   maxP75          → the condition, on the p75 of the named metric
+#   maxRegressionRatio → optional second condition vs. the same route's history
+
+rules:
+  # ── Error rate ─────────────────────────────────────────────────────────────
+  - name: Error rate critical
+    severity: critical
+    kind: error-rate
+    condition: "events with level=error / all events > 5% for 15m, min 20 errors"
+    windowMinutes: 15
+    minEvents: 20
+    maxErrorRatio: 0.05
+    maxErrorCount: 100
+    rationale: >-
+      5% is the conventional "users are visibly broken" line and is high enough
+      to absorb ordinary variance. 20 errors is the volume floor: below it the
+      ratio is dominated by a handful of requests and 1/1 is already 100%, which
+      is why the floor is checked before the ratio. The 100-error absolute
+      ceiling catches a real incident during a low-traffic period where the
+      ratio alone would stay under 5%.
+    actions: [ops-slack-webhook, maintainer-list, ops-slack-channel]
+
+  - name: Error rate warning
+    severity: warning
+    kind: error-rate
+    condition: "events with level=error / all events > 1% for 60m, min 50 errors"
+    windowMinutes: 60
+    minEvents: 50
+    maxErrorRatio: 0.01
+    maxErrorCount: 250
+    rationale: >-
+      1% is the conventional "something is degraded" line. The window is 4x
+      longer than the critical rule and the volume floor is 2.5x higher, so the
+      warning tier only fires on sustained problems — a transient burst trips the
+      critical rule instead, which is the ordering we want. 250 errors over an
+      hour on the warning tier is ~4/min, high enough to be worth a non-urgent
+      mention without waking anyone.
+    actions: [ops-slack-webhook, maintainer-list]
+
+  # ── Web Vitals ─────────────────────────────────────────────────────────────
+  # maxP75 values follow the Google "good" thresholds; maxRegressionRatio
+  # catches a release that is slower than this app has ever been while still
+  # inside the absolute budget.
+  - name: LCP p75 critical
+    severity: critical
+    kind: web-vitals
+    metric: LCP
+    condition: "p75(LCP) > 4000ms for 30m, min 100 page views"
+    windowMinutes: 30
+    minSamples: 100
+    maxP75: 4000
+    maxRegressionRatio: 0.5
+    rationale: >-
+      4000ms is the "poor" boundary in the Core Web Vitals guidance. 30m is long
+      enough to be a real trend and short enough to catch a bad deploy before
+      the next one. A 50% regression is only meaningful with history, so a
+      release with no baseline degrades to the absolute check (see the
+      "no-baseline" suppression in the module).
+    actions: [ops-slack-webhook, maintainer-list, ops-slack-channel]
+
+  - name: LCP p75 warning
+    severity: warning
+    kind: web-vitals
+    metric: LCP
+    condition: "p75(LCP) > 2500ms for 60m, min 100 page views"
+    windowMinutes: 60
+    minSamples: 100
+    maxP75: 2500
+    maxRegressionRatio: 0.25
+    rationale: >-
+      2500ms is the "needs improvement" boundary. Tighter 25% regression band
+      than the critical tier so slow erosion is visible before it becomes an
+      outage.
+    actions: [ops-slack-webhook, maintainer-list]
+
+  - name: INP p75 critical
+    severity: critical
+    kind: web-vitals
+    metric: INP
+    condition: "p75(INP) > 500ms for 30m, min 100 page views"
+    windowMinutes: 30
+    minSamples: 100
+    maxP75: 500
+    maxRegressionRatio: 0.5
+    rationale: >-
+      500ms is the "poor" boundary. INP needs real user interaction, so the
+      100-page-view floor matters more here than for LCP — a cold deploy with no
+      interactions would otherwise read as "infinite" interaction latency.
+    actions: [ops-slack-webhook, maintainer-list, ops-slack-channel]
+
+  - name: INP p75 warning
+    severity: warning
+    kind: web-vitals
+    metric: INP
+    condition: "p75(INP) > 200ms for 60m, min 100 page views"
+    windowMinutes: 60
+    minSamples: 100
+    maxP75: 200
+    maxRegressionRatio: 0.25
+    rationale: "200ms is the 'needs improvement' boundary."
+    actions: [ops-slack-webhook, maintainer-list]
+
+  - name: CLS p75 warning
+    severity: warning
+    kind: web-vitals
+    metric: CLS
+    condition: "p75(CLS) > 0.1 for 60m, min 100 page views"
+    windowMinutes: 60
+    minSamples: 100
+    maxP75: 0.1
+    maxRegressionRatio: 0.25
+    rationale: >-
+      0.1 is the "good" boundary. Deliberately warning-only: CLS is unitless and
+      has no "poor" line worth paging a single-page dashboard on, but a sustained
+      drift past 0.1 is a genuine regression worth telling the team about.
+    actions: [ops-slack-webhook, maintainer-list]
+
+  - name: TTFB p75 critical
+    severity: critical
+    kind: web-vitals
+    metric: TTFB
+    condition: "p75(TTFB) > 1800ms for 30m, min 100 page views"
+    windowMinutes: 30
+    minSamples: 100
+    maxP75: 1800
+    maxRegressionRatio: 0.5
+    rationale: >-
+      1800ms is the "poor" boundary. TTFB on this app is dominated by the Soroban
+      RPC round-trips in useSorobanStatus, so a spike here is usually an upstream
+      RPC provider problem rather than our code — the payload links straight to
+      the route's Web Vitals view so the on-call can confirm which.
+    actions: [ops-slack-webhook, maintainer-list, ops-slack-channel]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Staging rehearsal
+# ─────────────────────────────────────────────────────────────────────────────
+# Every rule above must additionally be created once in a `staging` environment
+# with shorter windows (5m / 15m) so a deliberate test spike can be observed
+# end-to-end without waiting an hour. See lib/telemetry/README.md.
+staging_rehearsal:
+  environment: staging
+  shortenedWindows: [5, 15]
+  trigger: >-
+    Load the app and force an unhandled error, then reload five times inside the
+    shortened window. Expect exactly one "Error rate critical" and nothing from
+    the warning tier.

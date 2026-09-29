@@ -1,0 +1,28 @@
+{
+  "$comment": "Canary rollout thresholds used by scripts/deploy/canary-controller.mjs. Every value is explained in docs/deploy/canary-rollout.md. Changes here are reviewed like code.",
+  "bakeMinutes": 10,
+  "pollSeconds": 30,
+  "maxStageMinutes": 30,
+  "probe": {
+    "paths": ["/"],
+    "timeoutMs": 10000
+  },
+  "synthetic": {
+    "consecutiveFailures": 3,
+    "window": 10,
+    "minProbes": 5,
+    "maxFailureRatio": 0.2
+  },
+  "errorRate": {
+    "max": 0.02,
+    "maxRatioToBaseline": 2,
+    "minRequests": 200
+  },
+  "webVitals": {
+    "minSamples": 50,
+    "maxRegressionRatio": 1.25,
+    "lcp": { "goodMs": 2500, "poorMs": 4000 },
+    "inp": { "goodMs": 200, "poorMs": 500 },
+    "cls": { "good": 0.1, "poor": 0.25 }
+  }
+}

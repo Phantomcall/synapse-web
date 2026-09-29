@@ -1,0 +1,127 @@
+name: Staging smoke
+
+# The gate that decides whether a staging deploy is genuinely healthy.
+#
+# A deploy that builds cleanly still tells you nothing about the *running*
+# application: a production bundle can ship with a missing asset, a broken
+# hydration, or an unreachable Testnet RPC. This runs a narrow Playwright suite
+# against the already-deployed URL -- never a locally booted copy, because a
+# smoke test that builds its own copy cannot catch a bad deploy, which is the
+# entire point of it.
+#
+# See docs/staging-smoke-tests.md for the retry strategy and how this is wired
+# into the promotion gate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Staging URL to verify (defaults to the SMOKE_BASE_URL secret)"
+        required: false
+        type: string
+      ref:
+        description: "Commit that was deployed (informational, recorded on the summary)"
+        required: false
+        type: string
+  repository_dispatch:
+    types: [staging-deployed]
+  schedule:
+    # Hourly. Catches a deploy that rotted (expired cert, drained connection
+    # pool, a Testnet RPC change) after it was already promoted.
+    - cron: "17 * * * *"
+
+concurrency:
+  # One smoke run against one shared staging deployment. Overlapping runs would
+  # have the tests fighting each other for the same instance and turn a health
+  # signal into a load test.
+  group: staging-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Smoke test staging deploy
+    runs-on: ubuntu-latest
+    # Hard ceiling so a hung test can never sit on the promotion gate forever.
+    timeout-minutes: 15
+    outputs:
+      base_url: ${{ steps.config.outputs.base_url }}
+    steps:
+      - name: Resolve target URL
+        id: config
+        env:
+          # A fallback to localhost would be worse than no smoke test at all,
+          # because it would pass. Require an explicit value.
+          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          DISPATCH_URL: ${{ github.event.client_payload.base_url }}
+        run: |
+          url="${INPUT_BASE_URL:-$DISPATCH_URL}"
+          url="${url:-$SMOKE_BASE_URL}"
+          if [ -z "$url" ]; then
+            echo "::error::No staging URL. Set the SMOKE_BASE_URL repository secret, or pass base_url."
+            exit 1
+          fi
+          # Reject a non-HTTPS target: smoke tests are unauthenticated and
+          # unauthenticated traffic to a public host is not something to send
+          # by accident. Localhost stays allowed for a manual local rehearsal.
+          case "$url" in
+            https://*) ;;
+            http://localhost*|http://127.0.0.1*) ;;
+            *) echo "::error::Refusing to smoke-test a non-HTTPS URL: $url"; exit 1 ;;
+          esac
+          echo "base_url=$url" >> "$GITHUB_OUTPUT"
+          echo "Smoke-testing: $url"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke tests
+        env:
+          SMOKE_BASE_URL: ${{ steps.config.outputs.base_url }}
+        run: npm run test:e2e:smoke
+
+      - name: Upload smoke report
+        # On success this is still useful — it is the evidence that staging was
+        # actually exercised — so it is not gated on failure.
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  promote-gate:
+    name: Promotion gate
+    needs: smoke
+    runs-on: ubuntu-latest
+    # This job is the required status check for the production environment. It
+    # only runs when every smoke test passed, because it `needs: smoke` — so
+    # making it required on the production environment makes a failed smoke
+    # test block promotion, which is the behaviour the issue asks for.
+    #
+    # Configure the gate in the repository or environment settings, not here:
+    #   Settings -> Environments -> <production env> -> Deployment protection
+    #   rules -> Required status checks -> "Promotion gate"
+    timeout-minutes: 5
+    steps:
+      - name: Confirm staging is healthy
+        run: |
+          echo "All smoke tests passed against ${{ needs.smoke.outputs.base_url }}."
+          echo "This check passing is what allows promotion to production."

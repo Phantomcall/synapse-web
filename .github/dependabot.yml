@@ -1,0 +1,175 @@
+# Dependabot update policy.
+#
+# The automatic *triage* of these PRs (what auto-merges and what does not) lives
+# in .github/workflows/dependabot-automerge.yml, and the rules it enforces are
+# unit-tested in scripts/dependabot-automerge/policy.test.mjs. This file only
+# controls *when* Dependabot looks and *how much* it bundles together.
+#
+# Two things here are deliberate and worth knowing before changing them:
+#
+#   1. `groups` is tuned to bundle compatible updates only. Grouping is what
+#      makes auto-merge worthwhile (one green run, one merge, one review), but
+#      bundling a patch with a major in the same group means the whole group is
+#      held. So the patch/minor bulk goes in one group, the two security-sensitive
+#      Stellar packages each get their own single-dependency group so a wallet-kit
+#      bump is never hidden inside a bundle of ten unrelated ones, and GitHub
+#      Actions are not grouped at all so a `v4` -> `v5` action bump is visible on
+#      its own.
+#
+#   2. `versioning-strategy` is left at the default (`widen`) so a patch update
+#      to `^3.2.7` is proposed as `^3.2.8` rather than an exact pin. The policy's
+#      bump classification is derived from the manifest, so `widen` keeps the
+#      derived `from`/`to` pair a clean patch pair.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: all
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: scope
+    groups:
+      # Framework packages must move together or the build breaks.
+      nextjs:
+        patterns:
+    
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      # Monday 06:00 UTC. Early in the week, so a held update is noticed while
+      # someone is around rather than ageing over a weekend.
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: scope
+    labels:
+      - dependencies
+      - automerge-candidate
+    groups:
+      # Bulk routine drift: the patch/minor updates that are cheap to take and
+      # expensive to keep deferring. A group containing any minor or major is
+      # held for review by the policy, which is the intended behaviour.
+      npm-patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - patch
+          - minor
+        exclude-patterns:
+          # Split out below: these must never be hidden inside a bundle.
+          - "@stellar/stellar-sdk"
+          - "@creit.tech/stellar-wallets-kit"
+          - "@creit.tech/xbull-wallet-connect"
+          - "next"
+          - "react"
+          - "react-dom"
+          # Tooling that changes what the local/CI gates do, so a reviewer
+          # should see it move on its own.
+          - "prettier"
+          - "eslint"
+          - "typescript"
+
+      # Each security-sensitive package is isolated. One dependency per group
+      # means a wallet-kit or SDK bump is a single-line diff that is always held
+      # for manual review, never a footnote in an eleven-package bundle.
+      npm-stellar-sdk:
+        applies-to: version-updates
+        patterns:
+          - "@stellar/stellar-sdk"
+
+      npm-wallets-kit:
+        applies-to: version-updates
+        patterns:
+          - "@creit.tech/stellar-wallets-kit"
+          - "@creit.tech/xbull-wallet-connect"
+
+      npm-app-runtime:
+        applies-to: version-updates
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+
+      # Framework packages must move together or the build breaks.
+      nextjs:
+        patterns:
+          - next
+          - eslint-config-next
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+      stellar:
+        patterns:
+          - "@stellar/*"
+          - "@creit.tech/*"
+      dev-tooling:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    # Security fixes are never grouped, so one vulnerable package cannot be held
+    # back by an unrelated failing bump in the same group.
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - ci
+      - automerge-candidate
+    # No `groups` on purpose. An action `v4` -> `v5` bump is a major move and the
+    # policy holds majors, so bundling actions would only produce held PRs with a
+    # larger diff to read. One action per PR keeps the held diff small.
+
+  # Security updates run daily and outside the version-update schedule, because
+  # the time-to-patch for a published advisory is measured in days, not weeks.
+  # They still go through the same triage policy: a patch to a non-exempt
+  # dependency auto-merges, and a patch to the Stellar SDK or the wallet kit is
+  # still held, because a security fix for a library that signs transactions
+  # deserves a human reading the diff.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - security
+      - automerge-candidate
+    # No version-update groups here: security updates should arrive as a focused
+    # diff, not bundled with anything.
+    ignore:
+      # Peer-dependency-only ranges and dev tooling that is not shipped have
+      # almost never been the vector for a published advisory in this stack.
+      # Remove a line if that stops being true.
+      - dependency-name: "eslint"
+        dependency-type: "development"

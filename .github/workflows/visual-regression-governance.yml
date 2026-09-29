@@ -1,0 +1,471 @@
+name: Visual Regression Governance
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: visual-regression-governance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  VR_SUITE_PATH: components/ui/visual-regression.test.tsx
+  VR_SNAPSHOT_PATH: components/ui/__snapshots__/visual-regression.test.tsx.snap
+  VR_SUITE_ISSUE: "148"
+  VR_SUITE_PR: "223"
+  VR_GOVERNANCE_ISSUE: "158"
+
+jobs:
+  baseline-gate:
+    name: Baseline approval gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect visual regression suite
+        id: detect
+        run: |
+          missing=""
+          for path in "$VR_SUITE_PATH" "$VR_SNAPSHOT_PATH"; do
+            if [ ! -f "$path" ]; then
+              missing+="$path"$'\n'
+            fi
+          done
+          if [ -z "$missing" ]; then
+            echo "suite_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "suite_present=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "missing<<VR_MISSING_EOF"
+            printf '%s' "$missing"
+            echo "VR_MISSING_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report inactive gate when the visual regression suite is missing
+        if: steps.detect.outputs.suite_present != 'true'
+        env:
+          VR_MISSING: ${{ steps.detect.outputs.missing }}
+        run: |
+          {
+            echo "## Visual regression governance gate: INACTIVE (no verdict produced)"
+            echo
+            echo "The visual regression suite is **not present in this commit**, so this workflow could not"
+            echo "compute a snapshot diff and did **not** run the baseline approval gate."
+            echo
+            echo "Missing from the working tree:"
+            echo '```'
+            printf '%s' "$VR_MISSING"
+            echo '```'
+            echo
+            echo "| Item | Reference |"
+            echo "| :-- | :-------- |"
+            echo "| Visual regression suite (out of scope for #${{ env.VR_GOVERNANCE_ISSUE }}) | issue #${{ env.VR_SUITE_ISSUE }} |"
+            echo "| Suite implementation currently open and unmerged | PR #${{ env.VR_SUITE_PR }} |"
+            echo "| This CI governance layer | issue #${{ env.VR_GOVERNANCE_ISSUE }} |"
+            echo
+            echo "This check is **green because it was skipped, not because it passed**. It starts enforcing"
+            echo "automatically once PR #${{ env.VR_SUITE_PR }} merges and \`$VR_SUITE_PATH\` / \`$VR_SNAPSHOT_PATH\` exist."
+            echo
+            echo "Until then, review visual changes by hand as described in \`docs/visual-regression-ci.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Visual regression governance gate inactive::The visual regression suite is missing from this commit (missing: $(printf '%s' "$VR_MISSING" | tr '\n' ' ')). Tracked in issue #${{ env.VR_SUITE_ISSUE }}, implemented in the open, unmerged PR #${{ env.VR_SUITE_PR }}. No baseline approval gate ran and no diff summary was produced for this PR."
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.suite_present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.detect.outputs.suite_present == 'true'
+        run: npm ci
+
+      - name: Run visual regression suite
+        id: suite
+        if: steps.detect.outputs.suite_present == 'true'
+        run: |
+          set +e
+          npx vitest run --ci --reporter=verbose "$VR_SUITE_PATH" 2>&1 | tee vr-suite.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Collect baseline snapshot diff
+        id: diff
+        if: steps.detect.outputs.suite_present == 'true'
+        env:
+          VR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          VR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -z "$VR_BASE_SHA" ] || [ -z "$VR_HEAD_SHA" ]; then
+            echo "::warning::No pull request base/head SHA available; treating the baseline as unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --stat "$VR_BASE_SHA...$VR_HEAD_SHA" -- "$VR_SNAPSHOT_PATH" > baseline.stat || true
+          git diff "$VR_BASE_SHA...$VR_HEAD_SHA" -- "$VR_SNAPSHOT_PATH" > baseline.diff || true
+          files="$(git diff --name-only "$VR_BASE_SHA...$VR_HEAD_SHA" -- "$VR_SNAPSHOT_PATH")"
+          if [ -n "$files" ]; then
+            changed=true
+          else
+            changed=false
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          {
+            echo "files<<VR_FILES_EOF"
+            echo "$files"
+            echo "VR_FILES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Baseline changed: $changed"
+
+      - name: Collect baseline approval signals
+        id: collect
+        if: steps.detect.outputs.suite_present == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("node:fs");
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const number = pr.number;
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: number,
+              per_page: 100,
+            });
+            const logins = [...new Set(reviews.map((r) => r.user && r.user.login).filter(Boolean))];
+            const permissions = {};
+            const associations = {};
+            for (const login of logins) {
+              associations[login] = (pr.author && pr.author.login === login
+                ? pr.author_association
+                : (reviews.filter((r) => r.user && r.user.login === login).pop() || {}).author_association
+              ) || null;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner,
+                  repo,
+                  username: login,
+                });
+                permissions[login] = String(response.data.permission || "none").toLowerCase();
+              } catch (error) {
+                permissions[login] = null;
+                core.info(
+                  `Permission lookup for @${login} failed (${error.status}); falling back to author_association=${associations[login]}.`
+                );
+              }
+            }
+            const payload = {
+              author: pr.user.login,
+              headSha: pr.head.sha,
+              baseSha: pr.base.sha,
+              pullRequest: number,
+              permissions,
+              associations,
+              reviews: reviews
+                .filter((r) => r.user)
+                .map((r) => ({
+                  user: r.user.login,
+                  state: r.state,
+                  body: r.body || "",
+                  commitId: r.commit_id || null,
+                  submittedAt: r.submitted_at || null,
+                })),
+            };
+            fs.writeFileSync("approval-payload.json", `${JSON.stringify(payload, null, 2)}\n`);
+            core.setOutput("review_count", String(reviews.length));
+
+      - name: Evaluate baseline approval
+        id: gate
+        if: steps.detect.outputs.suite_present == 'true'
+        env:
+          VR_REQUIRED: ${{ steps.diff.outputs.changed == 'true' }}
+        run: |
+          required=false
+          if [ "$VR_REQUIRED" = "true" ]; then
+            required=true
+          fi
+          set +e
+          node scripts/visual-regression-approval.mjs \
+            --payload approval-payload.json \
+            --out approval-decision.json \
+            --report approval-report.md \
+            --required="$required"
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            echo "::error::The baseline approval gate could not evaluate this pull request."
+            exit "$status"
+          fi
+          exit 0
+
+      - name: Upload visual regression artifacts
+        if: always() && steps.detect.outputs.suite_present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-report-${{ github.event.pull_request.number || github.run_id }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            vr-suite.log
+            baseline.stat
+            baseline.diff
+            approval-decision.json
+            approval-payload.json
+            approval-report.md
+            ${{ env.VR_SNAPSHOT_PATH }}
+
+      - name: Publish diff summary for reviewer approval
+        if: steps.detect.outputs.suite_present == 'true'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          VR_SUITE_EXIT: ${{ steps.suite.outputs.exit_code }}
+          VR_MARKER_TEXT: "<!-- baseline-approved -->"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("node:fs");
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const marker = "<!-- vr-governance-report -->";
+            const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "");
+            const decision = JSON.parse(read("approval-decision.json") || '{"approved":false}');
+            const diff = read("baseline.diff");
+            const stat = read("baseline.stat");
+            const report = read("approval-report.md");
+            const diffBody = diff.split("\n").slice(0, 200).join("\n");
+            const truncated = diff.split("\n").length > 200 ? "\n... (truncated, see the artifact)" : "";
+            const suiteExit = process.env.VR_SUITE_EXIT || "n/a";
+            const markerText = process.env.VR_MARKER_TEXT || "<!-- baseline-approved -->";
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const verdict = decision.approved
+              ? ":white_check_mark: Baseline update approved"
+              : ":x: Baseline update not approved";
+            const blocked = (decision.blocked || [])
+              .map((entry) => `| @${entry.user} | ${entry.state} | \`${entry.reason}\` |`)
+              .join("\n");
+            const body = [
+              marker,
+              "## Visual regression governance",
+              "",
+              verdict,
+              "",
+              "| Field | Value |",
+              "| :--- | :---- |",
+              `| PR author | @${decision.author} |`,
+              `| Head commit | \`${(decision.headSha || "").slice(0, 7)}\` |`,
+              `| Suite run | exit code \`${suiteExit}\` |`,
+              `| Baseline changed by this PR | ${stat.trim() ? "yes" : "no"} |`,
+              `| Gate code | \`${decision.code}\` |`,
+              "",
+              `[Open this workflow run](${runUrl}) — the \`visual-regression-report-*\` artifact is attached to it.`,
+              "",
+              "### Snapshot baseline diff",
+              "",
+              stat.trim() ? "```diff\n" + stat.trim() + "\n```" : "_No snapshot baseline was changed by this PR._",
+              "",
+              diffBody.trim() ? "```diff\n" + diffBody + truncated + "\n```" : "",
+              "",
+              "### Baseline approval",
+              "",
+              report.trim() || "_No approval report was produced._",
+              "",
+              blocked
+                ? "| Reviewer | State | Why it does not count |\n| :------- | :---- | :------------------- |\n" + blocked
+                : "",
+              "",
+              "The PR author can never satisfy this gate on their own. To approve a baseline update, a",
+              "**different** user with **write access** must leave an *Approve* review on the current head",
+              "commit whose body contains `" + markerText + "` (or `/baseline-approve`).",
+              "Full process: `docs/visual-regression-ci.md`.",
+            ]
+              .filter((line) => line !== undefined)
+              .join("\n");
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info("Updated the existing visual regression governance comment.");
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+              core.info("Created the visual regression governance comment.");
+            }
+
+      - name: Write gate summary
+        if: always() && steps.detect.outputs.suite_present == 'true'
+        env:
+          VR_BASELINE_CHANGED: ${{ steps.diff.outputs.changed }}
+          VR_SUITE_EXIT: ${{ steps.suite.outputs.exit_code }}
+          VR_APPROVED: ${{ steps.gate.outputs.approved }}
+          VR_GATE_CODE: ${{ steps.gate.outputs.code }}
+          VR_FILES: ${{ steps.diff.outputs.files }}
+        run: |
+          {
+            echo "## Visual regression governance gate"
+            echo
+            echo "| Field | Value |"
+            echo "| :--- | :---- |"
+            echo "| Suite | \`$VR_SUITE_PATH\` |"
+            echo "| Suite run exit code | \`${VR_SUITE_EXIT:-n/a}\` |"
+            echo "| Baseline changed by this PR | \`${VR_BASELINE_CHANGED:-false}\` |"
+            echo "| Gate decision | \`${VR_GATE_CODE:-n/a}\` |"
+            echo "| Run | [#${GITHUB_RUN_NUMBER}]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) |"
+            echo
+            echo "### Changed reference snapshots"
+            echo
+            if [ -n "${VR_FILES:-}" ]; then
+              printf '%s\n' "$VR_FILES" | sed 's/^/- `/' | sed 's/$/`/'
+            else
+              echo "_None — the reference baseline on \`main\` is unchanged by this PR._"
+            fi
+            echo
+            if [ -f approval-report.md ]; then
+              echo "### Approval report"
+              echo
+              cat approval-report.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce baseline approval gate
+        if: steps.detect.outputs.suite_present == 'true'
+        env:
+          VR_BASELINE_CHANGED: ${{ steps.diff.outputs.changed }}
+          VR_SUITE_EXIT: ${{ steps.suite.outputs.exit_code }}
+          VR_APPROVED: ${{ steps.gate.outputs.approved }}
+          VR_GATE_CODE: ${{ steps.gate.outputs.code }}
+        run: |
+          suite_failed=0
+          if [ "${VR_SUITE_EXIT:-1}" != "0" ]; then
+            suite_failed=1
+          fi
+          baseline_changed=0
+          if [ "${VR_BASELINE_CHANGED:-false}" = "true" ]; then
+            baseline_changed=1
+          fi
+          approved=0
+          if [ "${VR_APPROVED:-false}" = "true" ]; then
+            approved=1
+          fi
+
+          if [ "$suite_failed" = "1" ] && [ "$baseline_changed" = "0" ]; then
+            echo "::error title=Unapproved visual diff::The visual regression suite reported a diff but this PR does not change $VR_SNAPSHOT_PATH. If the change is unintended, revert the component change. If it is intentional, regenerate the baseline with 'npx vitest run -u $VR_SUITE_PATH', commit $VR_SNAPSHOT_PATH, and push."
+            exit 1
+          fi
+
+          if [ "$suite_failed" = "1" ] && [ "$baseline_changed" = "1" ] && [ "$approved" = "0" ]; then
+            echo "::error title=Baseline update awaiting independent approval::$VR_SNAPSHOT_PATH was updated but no valid baseline approval was found (gate code: ${VR_GATE_CODE:-n/a}). A different user with write access must leave an Approve review containing '<!-- baseline-approved -->' on the current head commit."
+            exit 1
+          fi
+
+          if [ "$suite_failed" = "1" ] && [ "$baseline_changed" = "1" ] && [ "$approved" = "1" ]; then
+            echo "::error title=Approved baseline still mismatching::The baseline update was approved, but the suite still fails against it. Regenerate the baseline with 'npx vitest run -u $VR_SUITE_PATH' and push again; the approval will need to be re-given on the new head commit."
+            exit 1
+          fi
+
+          if [ "$suite_failed" = "0" ] && [ "$baseline_changed" = "1" ] && [ "$approved" = "0" ]; then
+            echo "::error title=Baseline update awaiting independent approval::$VR_SNAPSHOT_PATH was updated and the suite is green, but the update is not independently approved (gate code: ${VR_GATE_CODE:-n/a}). The PR author cannot approve their own baseline change. A different user with write access must leave an Approve review containing '<!-- baseline-approved -->' on the current head commit."
+            exit 1
+          fi
+
+          if [ "$suite_failed" = "0" ] && [ "$baseline_changed" = "1" ] && [ "$approved" = "1" ]; then
+            echo "::notice title=Approved baseline update::The reference snapshot change is approved and will become the new baseline on main once this PR merges."
+            exit 0
+          fi
+
+          echo "::notice title=No visual diff::The visual regression suite is green and $VR_SNAPSHOT_PATH is unchanged. No baseline approval is required."
+          exit 0
+
+  reference-baseline:
+    name: Reference baseline on main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect visual regression suite
+        id: detect
+        run: |
+          missing=""
+          for path in "$VR_SUITE_PATH" "$VR_SNAPSHOT_PATH"; do
+            if [ ! -f "$path" ]; then
+              missing+="$path"$'\n'
+            fi
+          done
+          if [ -z "$missing" ]; then
+            echo "suite_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "suite_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip — visual regression suite not present on main
+        if: steps.detect.outputs.suite_present != 'true'
+        run: |
+          {
+            echo "## Reference baseline check: SKIPPED"
+            echo
+            echo "The visual regression suite is not present on \`main\` yet, so there is no reference baseline to verify."
+            echo "Tracked in issue #${{ env.VR_SUITE_ISSUE }}; implemented in the open, unmerged PR #${{ env.VR_SUITE_PR }}."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Reference baseline check skipped::No visual regression suite on main yet (issue #${{ env.VR_SUITE_ISSUE }}, PR #${{ env.VR_SUITE_PR }})."
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.suite_present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.detect.outputs.suite_present == 'true'
+        run: npm ci
+
+      - name: Verify main's reference baselines
+        if: steps.detect.outputs.suite_present == 'true'
+        run: |
+          npx vitest run --ci --reporter=verbose "$VR_SUITE_PATH" 2>&1 | tee vr-suite.log
+          {
+            echo "## Reference baseline check"
+            echo
+            echo "\`$VR_SNAPSHOT_PATH\` on \`main\` is the committed reference baseline. This job re-runs the suite against it on every merge to prove the approved baseline that landed on \`main\` is the one CI will hold future PRs to."
+            echo
+            echo '```'
+            cat vr-suite.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload main's reference baseline
+        if: always() && steps.detect.outputs.suite_present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-baseline-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            vr-suite.log
+            ${{ env.VR_SNAPSHOT_PATH }}

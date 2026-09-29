@@ -1,0 +1,71 @@
+name: Performance history
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: performance-history
+  cancel-in-progress: false
+
+jobs:
+  record:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.actor.login != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout measured revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dashboard for Lighthouse
+        env:
+          NEXT_PUBLIC_CONTRACT_ID: ""
+          NEXT_PUBLIC_SOROBAN_RPC_URL: https://soroban-testnet.stellar.org
+        run: npm run build
+
+      - name: Start dashboard
+        run: npm run start -- --hostname 127.0.0.1 > /tmp/synapse-next.log 2>&1 &
+
+      - name: Run Lighthouse
+        run: |
+          npx --yes wait-on@8 http://127.0.0.1:3000
+          npm exec --yes --package=@lhci/cli@0.14.0 -- lhci autorun \
+            --collect.url=http://127.0.0.1:3000 \
+            --collect.numberOfRuns=1 \
+            --collect.settings.chromeFlags="--no-sandbox --headless" \
+            --upload.target=filesystem \
+            --upload.outputDir=.lighthouseci
+
+      - name: Append metrics to history
+        env:
+          PERFORMANCE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: npm run perf:record
+
+      - name: Commit updated history
+        run: |
+          cp public/performance/history.json /tmp/performance-history.json
+          git fetch origin main
+          git switch --force-create performance-history origin/main
+          cp /tmp/performance-history.json public/performance/history.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/performance/history.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: record performance history"
+            git push origin HEAD:main
+          fi
