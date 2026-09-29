@@ -1,0 +1,121 @@
+name: Uptime Check
+
+# Synthetic monitoring for the deployed dashboard.
+#
+# The `CI` workflow proves the code builds, which says nothing about whether the
+# deployed site is serving right now. This job loads the real deployment on a
+# schedule and checks it can still reach Soroban RPC.
+#
+# Alerting rule: an alert fires only after `FAILURE_THRESHOLD` consecutive failed
+# checks, so a single blip does not page anyone. See docs/uptime-monitoring.md
+# for the external monitor that calls this endpoint and where to point real
+# alerts.
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub schedules can be delayed under load, which is
+    # acceptable for uptime monitoring but is why a second, external monitor is
+    # recommended as the primary signal.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Deployment URL to check (defaults to the production URL)"
+        required: false
+        type: string
+
+concurrency:
+  # Skip a run rather than queueing it: a stale check has no value once a newer
+  # one has started.
+  group: uptime-check
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write # open/close a single tracking issue while degraded
+
+env:
+  # Where the deployed dashboard lives. Override with the workflow_dispatch input
+  # or the UPTIME_TARGET_URL repository variable to check a staging deployment.
+  DEFAULT_TARGET_URL: https://synapse.example.com
+  # Consecutive failures required before an alert. One failure is usually a
+  # redeploy, not an outage.
+  FAILURE_THRESHOLD: 3
+
+jobs:
+  check:
+    name: Dashboard and RPC reachable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the deployment
+        id: probe
+        env:
+          TARGET_URL: ${{ inputs.url || vars.UPTIME_TARGET_URL || env.DEFAULT_TARGET_URL }}
+          FAILURE_THRESHOLD: ${{ env.FAILURE_THRESHOLD }}
+        run: |
+          set -uo pipefail
+
+          url="${TARGET_URL%/}/api/health"
+          echo "Probing ${url}"
+
+          # A page load proves the deployment serves; the JSON body proves the
+          # RPC read completed. Both are reported separately so the two failure
+          # modes stay distinguishable, which is the whole point of the split.
+          page_code=$(curl -sS -o /tmp/page.html -w '%{http_code}' --max-time 20 "${TARGET_URL%/}" || echo 000)
+          health_code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 20 "${url}" || echo 000)
+
+          echo "page_http=${page_code}" >> "$GITHUB_OUTPUT"
+          echo "health_http=${health_code}" >> "$GITHUB_OUTPUT"
+
+          app_ok=0
+          rpc_ok=0
+          reason=""
+
+          if [ "$page_code" = "200" ]; then
+            app_ok=1
+            echo "App reachable (HTTP ${page_code})."
+          else
+            reason="dashboard unreachable (HTTP ${page_code})"
+          fi
+
+          if [ "$health_code" = "200" ] && grep -q '"reachable":true' /tmp/health.json 2>/dev/null; then
+            rpc_ok=1
+            echo "Soroban RPC reachable."
+          elif [ "$app_ok" = "1" ]; then
+            reason="dashboard up but Soroban RPC unreachable: $(cat /tmp/health.json 2>/dev/null | head -c 300)"
+          fi
+
+          echo "app_ok=${app_ok}" >> "$GITHUB_OUTPUT"
+          echo "rpc_ok=${rpc_ok}" >> "$GITHUB_OUTPUT"
+          echo "reason=${reason}" >> "$GITHUB_OUTPUT"
+
+          cat /tmp/health.json 2>/dev/null || echo "(no health body)"
+
+      - name: Escalate only on sustained failure
+        if: steps.probe.outputs.app_ok != '1' || steps.probe.outputs.rpc_ok != '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASON: ${{ steps.probe.outputs.reason }}
+          APP_OK: ${{ steps.probe.outputs.app_ok }}
+          RPC_OK: ${{ steps.probe.outputs.rpc_ok }}
+        run: |
+          # Persist a consecutive-failure count on the issue itself, so the
+          # threshold survives between runs without any extra infrastructure.
+          issue=$(gh issue list --label uptime-alert --state open --limit 1 --json number --jq '.[0].number // empty')
+
+          if [ -z "$issue" ]; then
+            # Built with printf rather than a heredoc: a heredoc terminator
+            # would have to sit at column 0 to close, which ends the YAML block
+            # scalar this script lives in.
+            body=$(printf 'Consecutive failures: %s\n\nApp reachable: %s\nRPC reachable: %s\nReason: %s\n\nBoth states are reported because they need different responses: an unreachable app is a deployment or DNS problem, an unreachable RPC is a provider problem.\n' \
+              "$count" "$APP_OK" "$RPC_OK" "$REASON")
+
+            gh issue create \
+              --title "$title" \
+              --label uptime-alert \
+              --body "$body"
+          else
+            gh issue comment "$issue" --body "Failure ${count}: ${REASON}"
+          fi
+
+          echo "Alert raised."

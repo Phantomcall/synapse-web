@@ -109,6 +109,17 @@ npm run format:check # Prettier (CI check)
 npx tsc --noEmit     # Type-check without emitting
 ```
 
+### Health and uptime monitoring
+
+`GET /api/health` reports the dashboard and the Soroban RPC endpoint as two
+independent states, because an RPC provider outage and a deployment outage need
+different responses. `GET` returns 200 while the app is serving, so a provider
+blip is never mistaken for the site being down. `.github/workflows/uptime-check.yml`
+probes it every 10 minutes and escalates only after 3 consecutive failures.
+
+See [docs/uptime-monitoring.md](docs/uptime-monitoring.md) for the alerting
+setup and how to verify a deliberate outage.
+
 ---
 
 ## Adding a new tab
