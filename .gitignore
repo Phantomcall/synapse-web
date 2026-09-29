@@ -12,10 +12,20 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+
+# lighthouse ci
+/.lighthouseci
 
 # next.js
 /.next/
 /out/
+
+# docs
+/docs-dist/
 
 # production
 /build
@@ -45,3 +55,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# flake reporter output (local run artifact)
+/.flake-report.json

@@ -2,8 +2,12 @@ node_modules
 .next
 out
 build
+docs-dist
 package-lock.json
 # Prettier has no parser for dotenv syntax, and `format`/`format:check` run over
 # `.` -- without this they fail on the committed environment templates.
 .env*
 coverage
+test-results
+playwright-report
+blob-report

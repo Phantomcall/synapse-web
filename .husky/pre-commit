@@ -1,1 +1,23 @@
-npx lint-staged
+#!/usr/bin/env sh
+# Pre-commit: format + fast, staged-file-scoped lint.
+#
+# Deliberately narrow. Anything that needs to look at the whole project
+# (typecheck, tests) belongs in .husky/pre-push, where a few seconds is
+# acceptable. If you find yourself wanting to add something slow here, it
+# belongs in pre-push or in CI instead.
+#
+# The lint-staged config in package.json does the work: prettier on every
+# staged text file, then eslint --fix on staged JS/TS.
+
+. "$(dirname "$0")/_lib.sh"
+
+synapse_bypass_guard "pre-commit"
+
+# --concurrent false is load-bearing: the three tasks below all write to the
+# same staged files, and lint-staged >= 10 runs a glob's tasks in parallel by
+# default. Without this flag Prettier and ESLint --fix would race on the same
+# file. The flag cannot live in the package.json "lint-staged" field (lint-staged
+# validates that field as a plain glob map and rejects reserved keys), so it
+# lives here, on the only sanctioned way to invoke lint-staged.
+npx lint-staged --concurrent false ||
+  synapse_die "pre-commit" commit "lint-staged failed (Prettier or ESLint rejected a staged file). Fix the reported problems, or run 'npx lint-staged --concurrent false --debug' to see exactly which staged file is at fault."

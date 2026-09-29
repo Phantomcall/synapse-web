@@ -1,0 +1,120 @@
+name: Flake history
+
+# Folds each run's per-test verdicts into docs/testing/flake-history.json so a
+# test that needs retries cannot stay quiet indefinitely. See
+# docs/testing/QUARANTINE.md for what the numbers mean.
+
+on:
+  schedule:
+    # Nightly, plus a few times a day. The window is 30 runs, so a handful of
+    # runs a day fills it in about a week — fast enough for a new flake to show
+    # up, slow enough not to be noise.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      enforce:
+        description: "Fail when a chronic offender has no active quarantine"
+        type: boolean
+        default: true
+      min_observations:
+        description: "Runs a test must be seen in before it can be an offender"
+        type: string
+        default: "5"
+      rate:
+        description: "Flake rate (0-1) at which a test becomes an offender"
+        type: string
+        default: "0.1"
+
+# One history at a time. Two jobs folding the same window at once would race on
+# the same file, and the loser would silently drop the other's observations.
+concurrency:
+  group: flake-history
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  record:
+    name: Record flake history and report offenders
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the test suite
+        run: npm run test
+
+      - name: Fold the run into the history
+        run: |
+          node scripts/test/flake-history.mjs \
+            --commit="${{ github.sha }}" \
+            --min-observations=${{ github.event.inputs.min_observations || '5' }} \
+            --rate=${{ github.event.inputs.rate || '0.1' }} \
+            --summary-out=flake-summary.md \
+            | tee flake-report.txt
+
+      - name: Add the run to the job summary
+        if: always()
+        run: |
+          if [ -f flake-summary.md ]; then cat flake-summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f flake-report.txt ]; then echo '```' >> "$GITHUB_STEP_SUMMARY"; cat flake-report.txt >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Open a pull request with the updated history
+        # Only when the history actually changed. A nightly that always opens a
+        # PR trains everyone to dismiss it.
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- docs/testing/flake-history.json; then
+            echo "History unchanged. Nothing to open."
+            exit 0
+          fi
+          branch="chore/flake-history-$(date -u +%Y%m%d-%H%M)"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add docs/testing/flake-history.json
+          git commit -q -m "chore(test): record flake history for ${GITHUB_SHA}"
+          git push --force origin "$branch"
+
+          # --force above reuses the same branch name for a re-run of the same
+          # day, so a failed PR never accumulates as a list of near-duplicates.
+          {
+            echo "Automated nightly update of \`docs/testing/flake-history.json\`, from \`${GITHUB_SHA}\`."
+            echo
+            echo '```'
+            cat flake-report.txt
+            echo '```'
+            echo
+            echo "Opened by the Flake history workflow. Merge it to keep the history current."
+            echo "See \`docs/testing/QUARANTINE.md\` for what these numbers mean."
+          } > pr-body.md
+
+          gh pr create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base main \
+            --head "$branch" \
+            --title "chore(test): flake history for ${GITHUB_SHA:0:8}" \
+            --body-file pr-body.md
+
+      - name: Enforce the quarantine policy
+        if: github.event_name == 'workflow_dispatch' && inputs.enforce
+        run: |
+          node scripts/test/flake-history.mjs \
+            --no-merge \
+            --commit="${{ github.sha }}" \
+            --min-observations=${{ inputs.min_observations }} \
+            --rate=${{ inputs.rate }} \
+            --enforce

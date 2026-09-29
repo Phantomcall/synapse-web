@@ -1,5 +1,8 @@
 "use client";
+import { useState } from "react";
 import { ABI_ENDPOINTS, AMBER, BORDER, DIM, MONO } from "@/lib/constants";
+import { encodeArg } from "@/lib/soroban/args";
+import { simulateCall, submitCall } from "@/lib/soroban/contract";
 
 const ACCESS_COLORS: Record<string, string> = {
   "one-time": "#A78BFA",
@@ -8,7 +11,220 @@ const ACCESS_COLORS: Record<string, string> = {
   public: "#66BB6A",
 };
 
+const STATE_CHANGING = new Set(["one-time", "relay_signer", "admin"]);
+
+function isStateChanging(access: string): boolean {
+  return STATE_CHANGING.has(access);
+}
+
+function PlaygroundForm({ ep }: { ep: (typeof ABI_ENDPOINTS)[number] }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const params = ep.params ?? [];
+  const stateChanging = isStateChanging(ep.access);
+
+  function buildArgs() {
+    return params.map((p) => encodeArg(p.type, values[p.name] ?? ""));
+  }
+
+  async function runSimulate() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await simulateCall(ep.name, buildArgs());
+      setResult(JSON.stringify(res, null, 2));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runSubmit() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await submitCall(ep.name, buildArgs());
+      setResult(JSON.stringify(res, null, 2));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        borderTop: `1px solid ${BORDER}`,
+        paddingTop: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+    >
+      {params.length === 0 && (
+        <div style={{ fontFamily: MONO, fontSize: 10, color: DIM }}>
+          No parameters — call directly.
+        </div>
+      )}
+      {params.map((p) => (
+        <label
+          key={p.name}
+          style={{ display: "flex", flexDirection: "column", gap: 4 }}
+        >
+          <span style={{ fontFamily: MONO, fontSize: 9, color: DIM, letterSpacing: "0.08em" }}>
+            {p.name} · {p.type}
+          </span>
+          <input
+            value={values[p.name] ?? ""}
+            onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))}
+            placeholder={p.type}
+            style={{
+              background: "#0E1116",
+              border: `1px solid ${BORDER}`,
+              color: "#fff",
+              fontFamily: MONO,
+              fontSize: 11,
+              padding: "6px 8px",
+              outline: "none",
+            }}
+          />
+        </label>
+      ))}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={runSimulate}
+          disabled={busy}
+          style={{
+            fontFamily: MONO,
+            fontSize: 10,
+            letterSpacing: "0.08em",
+            padding: "6px 14px",
+            background: "transparent",
+            border: `1px solid ${AMBER}`,
+            color: AMBER,
+            cursor: busy ? "wait" : "pointer",
+          }}
+        >
+          SIMULATE
+        </button>
+        {stateChanging && (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={busy}
+            style={{
+              fontFamily: MONO,
+              fontSize: 10,
+              letterSpacing: "0.08em",
+              padding: "6px 14px",
+              background: "transparent",
+              border: `1px solid #EF5350`,
+              color: "#EF5350",
+              cursor: busy ? "wait" : "pointer",
+            }}
+          >
+            SUBMIT
+          </button>
+        )}
+      </div>
+
+      {confirming && (
+        <div
+          style={{
+            border: `1px solid #EF5350`,
+            background: "#1A1113",
+            padding: "10px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div style={{ fontFamily: MONO, fontSize: 10, color: "#EF5350", lineHeight: 1.6 }}>
+            WARNING: {ep.name} is a state-changing entrypoint. Submitting will sign and broadcast a
+            real transaction on the connected network. Continue?
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={runSubmit}
+              disabled={busy}
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                padding: "5px 12px",
+                background: "#EF5350",
+                border: "none",
+                color: "#0E1116",
+                cursor: busy ? "wait" : "pointer",
+              }}
+            >
+              CONFIRM SUBMIT
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                padding: "5px 12px",
+                background: "transparent",
+                border: `1px solid ${BORDER}`,
+                color: DIM,
+                cursor: "pointer",
+              }}
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <pre
+          style={{
+            fontFamily: MONO,
+            fontSize: 10,
+            color: "#EF5350",
+            whiteSpace: "pre-wrap",
+            margin: 0,
+          }}
+        >
+          {error}
+        </pre>
+      )}
+      {result && (
+        <pre
+          style={{
+            fontFamily: MONO,
+            fontSize: 10,
+            color: "#66BB6A",
+            whiteSpace: "pre-wrap",
+            margin: 0,
+          }}
+        >
+          {result}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export function DocsTab() {
+  const [open, setOpen] = useState<string | null>(null);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }} className="animate-fade-in">
       {/* Intro */}
@@ -124,6 +340,24 @@ export function DocsTab() {
             >
               {ep.desc}
             </div>
+            <button
+              type="button"
+              onClick={() => setOpen((cur) => (cur === ep.name ? null : ep.name))}
+              style={{
+                marginTop: 10,
+                fontFamily: MONO,
+                fontSize: 9,
+                letterSpacing: "0.08em",
+                padding: "4px 10px",
+                background: "transparent",
+                border: `1px solid ${BORDER}`,
+                color: DIM,
+                cursor: "pointer",
+              }}
+            >
+              {open === ep.name ? "CLOSE PLAYGROUND" : "TRY IT"}
+            </button>
+            {open === ep.name && <PlaygroundForm ep={ep} />}
           </div>
           <span
             style={{

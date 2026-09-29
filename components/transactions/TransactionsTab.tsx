@@ -7,6 +7,7 @@ import { Panel } from "@/components/ui/Panel";
 import { Field } from "@/components/ui/Field";
 import { SorobanTip } from "@/components/ui/SorobanTip";
 import { ActionButton } from "@/components/ui/ActionButton";
+import { SigningOriginNote } from "@/components/wallet/OriginBadge";
 import { useToast } from "@/components/ui/Toast";
 import { useWallet } from "@/lib/wallet/WalletProvider";
 import { invokeContract, simulateContractCall, stringArg, structArg } from "@/lib/soroban/contract";
@@ -198,6 +199,7 @@ export function TransactionsTab() {
           disabled={registering}
           onClick={runRegisterCallback}
         />
+        <SigningOriginNote />
         <SorobanTip>
           register_callback(payload: CallbackPayload) → signed by relay_signer keypair via
           TransactionBuilder

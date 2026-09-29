@@ -2,7 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+:root,
+[data-theme="dark"] {
   --bg0: #0a0b0d;
   --bg1: #0f1115;
   --bg2: #14171d;
@@ -11,10 +12,27 @@
   --amber-dim: rgba(245, 166, 35, 0.12);
   --border: rgba(245, 166, 35, 0.15);
   --dim: rgba(255, 255, 255, 0.35);
+  --fg: #ffffff;
   --pending: #f5a623;
   --processing: #4fc3f7;
   --completed: #66bb6a;
   --failed: #ef5350;
+}
+
+[data-theme="light"] {
+  --bg0: #f7f7f5;
+  --bg1: #ffffff;
+  --bg2: #f0f0ee;
+  --bg3: #e6e6e3;
+  --amber: #b26a00;
+  --amber-dim: rgba(178, 106, 0, 0.12);
+  --border: rgba(0, 0, 0, 0.14);
+  --dim: rgba(0, 0, 0, 0.55);
+  --fg: #14171d;
+  --pending: #b26a00;
+  --processing: #0277bd;
+  --completed: #2e7d32;
+  --failed: #c62828;
 }
 
 * {
@@ -23,7 +41,7 @@
 
 body {
   background: var(--bg0);
-  color: #fff;
+  color: var(--fg);
   /* Defined by next/font in app/layout.tsx; see MONO in lib/constants.ts. */
   font-family: var(--font-ibm-plex-mono), monospace;
   min-height: 100vh;
@@ -86,6 +104,45 @@ body {
   animation: fadeIn 0.35s ease both;
 }
 
+/* ── Reduced Motion Support (WCAG 2.1 AA / 2.3.3) ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-fade-in {
+    animation: none !important;
+  }
+}
+
+/* ── High Contrast Support (WCAG 2.1 AA / 1.4.3 & 1.4.6) ── */
+@media (prefers-contrast: more) {
+  :root {
+    --bg0: #000000;
+    --bg1: #080808;
+    --bg2: #101010;
+    --bg3: #181818;
+    --amber: #ffb74d;
+    --border: rgba(255, 183, 77, 0.45);
+    --dim: rgba(255, 255, 255, 0.85);
+  }
+
+  button,
+  input,
+  textarea {
+    border-width: 2px !important;
+  }
+
+  [role="tab"][aria-selected="true"] {
+    border-bottom-width: 3px !important;
+    color: #fff !important;
+  }
+}
+
 .scanline-overlay {
   position: relative;
 }
@@ -102,6 +159,10 @@ body {
     rgba(0, 0, 0, 0.04) 4px
   );
   z-index: 9999;
+}
+
+[data-theme="light"] .scanline-overlay::before {
+  display: none;
 }
 
 /* Responsive Layout Classes */
@@ -189,5 +250,113 @@ body {
 @media (max-width: 480px) {
   .stat-cards-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Print receipt view (issue #102) */
+.tx-receipt-root {
+  display: none;
+}
+
+@media print {
+  /* Hide all normal app chrome; show only the receipt layout. */
+  body > *:not(.tx-receipt-root) {
+    display: none !important;
+  }
+
+  .tx-receipt-root {
+    display: block !important;
+    position: static;
+    background: #fff;
+    color: #000;
+    font-family: var(--font-ibm-plex-mono), monospace;
+    padding: 0;
+    margin: 0;
+  }
+
+  .tx-receipt-root * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .tx-receipt-page {
+    max-width: 100%;
+    margin: 0;
+    padding: 12mm 10mm;
+  }
+
+  .tx-receipt-title {
+    font-size: 16pt;
+    font-weight: 700;
+    margin: 0 0 4pt;
+  }
+
+  .tx-receipt-subtitle {
+    font-size: 9pt;
+    margin: 0 0 12pt;
+  }
+
+  .tx-receipt-section {
+    margin: 0 0 12pt;
+    page-break-inside: avoid;
+  }
+
+  .tx-receipt-section-title {
+    font-size: 10pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid #000;
+    padding-bottom: 2pt;
+    margin: 0 0 6pt;
+  }
+
+  .tx-receipt-row {
+    display: flex;
+    gap: 8pt;
+    font-size: 9pt;
+    padding: 2pt 0;
+    border-bottom: 1px dotted #999;
+  }
+
+  .tx-receipt-label {
+    flex: 0 0 34%;
+    font-weight: 700;
+  }
+
+  /* Long values (addresses, callback URLs) wrap instead of clipping. */
+  .tx-receipt-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  .tx-receipt-history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+
+  .tx-receipt-history th,
+  .tx-receipt-history td {
+    text-align: left;
+    padding: 3pt 4pt;
+    border-bottom: 1px solid #ccc;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .tx-receipt-link {
+    font-size: 9pt;
+    text-decoration: underline;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  @page {
+    margin: 10mm;
   }
 }

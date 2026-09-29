@@ -1,0 +1,187 @@
+name: Lighthouse
+
+# Detailed, browsable per-PR Lighthouse reporting.
+#
+# Scope: this is the *reporting* layer. The pass/fail gating that blocks a PR
+# lives in the earlier Lighthouse CI gate issue. The `assert` block in
+# lighthouserc.js is deliberately warn-only for that reason.
+
+on:
+  pull_request:
+    branches: [main]
+
+# A new push to the same PR makes the previous run irrelevant; don't burn CI
+# minutes re-auditing both branches.
+concurrency:
+  group: lighthouse-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Needed to post the report comment onto the PR.
+  pull-requests: write
+
+env:
+  # Pinned rather than floating: an unpinned LHCI release can change scoring
+  # between two runs of the same commit, which would show up as a regression
+  # that never happened. Not a devDependency either, to keep this out of
+  # package.json / package-lock.json.
+  LHCI_VERSION: 0.14.0
+  LIGHTHOUSE_PORT: 3000
+
+jobs:
+  audit:
+    name: Audit (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: pr
+            # The PR's merge commit — what would actually be merged.
+            ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          - name: base
+            # The merge base, for the historical comparison.
+            ref: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Checkout audited source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          # Needed to fetch the PR head later when restoring the config.
+          fetch-depth: 0
+
+      # The base branch does not contain lighthouserc.js (it is introduced by
+      # this PR), and more fundamentally the comparison is only valid if both
+      # sides are measured with the *same* config. Restoring the tooling from
+      # the PR head while keeping the base branch's app source is what makes
+      # "before vs after" a like-for-like measurement.
+      - name: Restore Lighthouse tooling from the PR head
+        if: matrix.name == 'base'
+        run: |
+          # Fetch the PR ref explicitly rather than by raw SHA: the head commit
+          # lives on a fork, and a bare SHA fetch from the base repo is not
+          # guaranteed to resolve.
+          git fetch --depth=1 origin "+refs/pull/$PR_NUMBER/head:refs/remotes/origin/pr-head"
+          git checkout refs/remotes/origin/pr-head -- lighthouserc.js scripts/lighthouse-report.mjs
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # A production build, not `next dev`: dev serves unminified React and
+      # compiles on demand, so its numbers are not what users get.
+      - name: Build
+        run: npm run build
+
+      # A baseline is a nice-to-have. If the base ref cannot be built or served
+      # — which is the normal case on the PR that first introduces tab routes,
+      # because the base has no `/[tab]` segment yet — the PR should still get
+      # a report, just without deltas. Hence continue-on-error, plus the
+      # workflow-level note in the comment the report job posts.
+      - name: Collect, upload and assert
+        id: collect
+        continue-on-error: ${{ matrix.name == 'base' }}
+        run: npx --yes "@lhci/cli@$LHCI_VERSION" autorun --config=lighthouserc.js
+
+      - name: Upload Lighthouse reports
+        if: always() && hashFiles('.lighthouseci/manifest.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-${{ matrix.name }}
+          path: .lighthouseci
+          retention-days: 14
+
+  report:
+    name: Publish browsable report
+    needs: audit
+    if: always() && needs.audit.result != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download PR report
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: lighthouse-pr
+          path: .lighthouseci
+
+      - name: Download base report
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: lighthouse-base
+          path: .base-lighthouseci
+
+      # Writes index.html (browsable), summary.md (the table) and
+      # report-meta.json next to the raw per-run Lighthouse HTML, so the
+      # "open full report" links resolve inside the uploaded artifact.
+      - name: Build browsable report and base comparison
+        id: report
+        continue-on-error: true
+        run: |
+          node scripts/lighthouse-report.mjs \
+            .lighthouseci/manifest.json \
+            .base-lighthouseci/manifest.json \
+            .lighthouseci/report
+
+      - name: Upload browsable report
+        if: always() && hashFiles('.lighthouseci/report/index.html') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci
+          retention-days: 14
+
+      # The artifact itself is behind GitHub's login, so the comment links to
+      # the run page where it can be downloaded, names the artifact, and inlines
+      # the comparison table so the useful part is readable without any click.
+      # To get a publicly browsable link instead, point `upload.target` at a
+      # self-hosted LHCI server — see the migration note in lighthouserc.js.
+      - name: Comment the report onto the PR
+        if: always() && hashFiles('.lighthouseci/report/summary.md') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const summary = fs.readFileSync('.lighthouseci/report/summary.md', 'utf8');
+            const meta = JSON.parse(fs.readFileSync('.lighthouseci/report/report-meta.json', 'utf8'));
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const banner = [
+              '## Lighthouse reports',
+              '',
+              `**Browsable report:** download the \`lighthouse-report\` artifact from [this run](${runUrl}) and open \`report/index.html\`.`,
+              'Each route card links through to the full Lighthouse HTML for that route.',
+              '',
+              meta.hasBaseline
+                ? '_Deltas are measured against the merge base using the same config and the same machine class._'
+                : '_No baseline was available for this run, so scores are absolute. This is expected on the first run after the tab routes are introduced._',
+              '',
+            ].join('\n');
+
+            const body = `${banner}\n${summary}`;
+
+            const marker = '<!-- lighthouse-report -->';
+            const withMarker = `${marker}\n${body}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body: withMarker });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body: withMarker });
+            }

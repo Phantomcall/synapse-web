@@ -1,0 +1,83 @@
+name: Docs
+
+# The documentation site in docs/ is built by scripts/docs/build.mjs into
+# docs-dist/ and published to GitHub Pages. Enable Pages with "GitHub Actions" as
+# the source; this workflow does not configure the repository for you.
+#
+# PR #175.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "docs/**"
+      - "scripts/docs/**"
+      - "lib/constants.ts"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# Only the deploy job needs write access, and only on push events: a pull
+# request from a fork cannot be granted these scopes, and asking for them
+# up front would fail the run before it starts.
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build documentation site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build docs
+        # A GitHub Pages *project* site is served from /<repo>/, so the base has
+        # to be the repository name or every asset and link 404s. Both values
+        # are derived rather than hardcoded; a custom domain would use
+        # `--base /` and `--site https://docs.example.com`.
+        run: |
+          npm run docs:build -- \
+            --base "/${{ github.event.repository.name }}/" \
+            --site "https://${{ github.repository_owner }}.github.io"
+
+      - name: Verify base path was applied
+        # A silently-unapplied base is the failure mode here: the build still
+        # exits 0 and the site 404s in production.
+        run: |
+          if grep -rn --include='*.html' -e 'href="/assets' -e 'src="/assets' docs-dist; then
+            echo "::error::absolute asset path in output; --base was not applied"
+            exit 1
+          fi
+          grep -q 'href="/'"${{ github.event.repository.name }}"'/assets/site.css"' docs-dist/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

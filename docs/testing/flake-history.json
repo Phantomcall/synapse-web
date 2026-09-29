@@ -1,0 +1,768 @@
+{
+  "version": 1,
+  "windowRuns": 30,
+  "updatedAt": "2026-09-28T02:37:39.715Z",
+  "runs": [
+    {
+      "at": "2026-09-28T02:37:39.715Z",
+      "commit": "48cdca3264161daeb735383b7bd01f14474bcd1f",
+      "tests": 94,
+      "flaky": 0,
+      "failed": 0
+    }
+  ],
+  "tests": {
+    "lib/utils.test.ts :: shortId > truncates to 13 characters with an ellipsis": {
+      "file": "lib/utils.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/utils.test.ts :: shortId > returns an em dash for an empty string": {
+      "file": "lib/utils.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/utils.test.ts :: shortId > does not truncate strings shorter than 13 characters": {
+      "file": "lib/utils.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/utils.test.ts :: elapsed > formats sub-minute durations in seconds": {
+      "file": "lib/utils.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/utils.test.ts :: elapsed > formats sub-hour durations in minutes": {
+      "file": "lib/utils.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/utils.test.ts :: elapsed > formats durations over an hour in hours": {
+      "file": "lib/utils.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/utils.test.ts :: formatAmount > formats to two decimal places": {
+      "file": "lib/utils.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: mergeTransactionEvents > returns the mock baseline unchanged when there are no events": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: mergeTransactionEvents > updates the status of a known transaction on StatusChanged": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: mergeTransactionEvents > ignores StatusChanged events for unknown tx ids": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: mergeTransactionEvents > inserts a placeholder row for a new TransactionRegistered id": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: mergeTransactionEvents > does not duplicate a placeholder for an id that already exists": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: mergeTransactionEvents > applies multiple events in order": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: nativeToTransaction > maps matching fields from the decoded struct": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: nativeToTransaction > falls back to placeholder fields when the decoded value isn't an object": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/transactionMerge.test.ts :: nativeToTransaction > falls back field-by-field when types don't match": {
+      "file": "lib/soroban/transactionMerge.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/wallet/storage.test.ts :: wallet storage helpers > returns undefined when nothing is stored": {
+      "file": "lib/wallet/storage.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/wallet/storage.test.ts :: wallet storage helpers > round-trips a stored wallet id": {
+      "file": "lib/wallet/storage.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/wallet/storage.test.ts :: wallet storage helpers > overwrites a previously stored id": {
+      "file": "lib/wallet/storage.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/wallet/storage.test.ts :: wallet storage helpers > clears the stored id": {
+      "file": "lib/wallet/storage.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > calls a first-attempt pass a pass": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > calls a test undefined diagnostics a pass rather than NaN-flaky": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > treats a negative retry count as no retries": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > calls a pass that needed one retry flaky": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > calls a pass that exhausted the retry budget flaky": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > calls a still-red test a failure": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > calls a still-red test a failure however many times it was retried": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > calls a pending test skipped": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > does not call a skipped test flaky even with retries": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: classify > agrees with vitest's own definition of flaky": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: testId > joins file and full name so identical test names in different files stay distinct": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: testId > is stable, so history survives renames of unrelated fields": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: summarize > counts every verdict bucket": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: summarize > returns zeros rather than undefined for an empty run": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > writes a run record that separates flaky from failed": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > records the retry count so a 2-retry pass is distinguishable from a first-time pass": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > makes file paths repo-relative so the id is the same on a developer laptop and in CI": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > creates the report directory when it does not exist yet": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > carries the run's reason and unhandled error count through to the record": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > exports a version so a stale run record is rejected rather than merged": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > does not throw when a test has no diagnostics at all": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-reporter.test.ts :: FlakeReporter run record > survives a test whose module id is missing": {
+      "file": "scripts/test/flake-reporter.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > records one observation per test per run": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > accumulates a window across runs": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > caps the window so the history file cannot grow without bound": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > drops the oldest observations, keeping the most recent": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > contributes no observation for a skipped test": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > stamps the last flaky run and its commit": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > leaves the input history untouched": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: mergeRun > keeps a bounded list of run summaries": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: flakeRate > is the fraction of the window that was flaky": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: flakeRate > ignores failed observations in the numerator but counts them in the denominator": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: flakeRate > is zero for a test with no observations": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: findChronicOffenders > flags a test that is flaky often enough, once there is enough data": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: findChronicOffenders > does not flag a test that is flaky once in many runs": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: findChronicOffenders > does not flag a test on too little data, however bad the rate": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: findChronicOffenders > does not flag a consistently failing test, because a real failure already blocks the build": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: findChronicOffenders > sorts the worst offender first": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: findChronicOffenders > honours a custom rate threshold": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: quarantine > is satisfied by a live entry": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: quarantine > stops being satisfied once it expires — no flag can extend it": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: quarantine > does not accept an unparseable expiry date as valid": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: quarantine > does not accept a missing entry as valid": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: quarantine > does not satisfy a different test": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: quarantine > finds the entry for a test id": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: quarantine > lists expired entries so they get cleaned up rather than accumulating": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: loadQuarantine > returns an empty list when the file does not exist": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: loadQuarantine > loads a well-formed ledger": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: loadQuarantine > rejects an entry with no owner, issue or expiry": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: loadQuarantine > rejects a ledger that is not an array": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: loadQuarantine > rejects unparseable JSON rather than quietly treating it as empty": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: findStale > reports tests that stopped being observed, rather than calling them offenders": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: parseArgs > reads a flag with a value": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: parseArgs > reads a bare flag as set": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: parseArgs > keeps a value that itself contains an equals sign": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: parseArgs > keeps a hyphenated flag name": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: parseArgs > rejects a stray positional argument instead of ignoring it": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: parseArgs > rejects an empty flag": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: reporting > says plainly that a chronic offender needs a decision": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: reporting > names the owner, issue and expiry for a quarantined offender": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: reporting > reports a clean history without inventing offenders": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: reporting > renders a markdown summary with the numbers that decided the verdict": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "scripts/test/flake-history.test.ts :: reporting > says so explicitly when there is nothing to do": {
+      "file": "scripts/test/flake-history.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/args.test.ts :: addressArg > encodes a G... address as an ScVal address that round-trips": {
+      "file": "lib/soroban/args.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/args.test.ts :: addressArg > throws for an invalid address string": {
+      "file": "lib/soroban/args.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/args.test.ts :: addressArg > matches Address.fromString for the same key": {
+      "file": "lib/soroban/args.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/args.test.ts :: stringArg > encodes a plain string that round-trips": {
+      "file": "lib/soroban/args.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/args.test.ts :: stringArg > handles an empty string": {
+      "file": "lib/soroban/args.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "lib/soroban/args.test.ts :: structArg > encodes a plain object as a map that round-trips": {
+      "file": "lib/soroban/args.test.ts",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "components/ui/Badge.test.tsx :: Badge > renders the label for PENDING": {
+      "file": "components/ui/Badge.test.tsx",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "components/ui/Badge.test.tsx :: Badge > renders the label for PROCESSING": {
+      "file": "components/ui/Badge.test.tsx",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "components/ui/Badge.test.tsx :: Badge > renders the label for COMPLETED": {
+      "file": "components/ui/Badge.test.tsx",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "components/ui/Badge.test.tsx :: Badge > renders the label for FAILED": {
+      "file": "components/ui/Badge.test.tsx",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    },
+    "components/ui/Badge.test.tsx :: Badge > colors the badge using the status's color token": {
+      "file": "components/ui/Badge.test.tsx",
+      "window": "0",
+      "lastSeenAt": "2026-09-28T02:37:39.715Z",
+      "lastFlakyAt": null,
+      "lastFlakyCommit": null,
+      "lastFailedAt": null
+    }
+  }
+}
